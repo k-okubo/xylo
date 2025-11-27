@@ -1,0 +1,8 @@
+BasedOnStyle: Google
+ColumnLimit: 120
+MaxEmptyLinesToKeep: 2
+PackConstructorInitializers: Never
+BreakConstructorInitializers: AfterColon
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortLambdasOnASingleLine: Empty
+BracedInitializerIndentWidth: 2

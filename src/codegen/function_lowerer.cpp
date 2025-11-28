@@ -720,12 +720,8 @@ llvm::Value* FunctionLowerer::BuildProjectionExpression(ProjectionExpression* ex
     }
 
     case MemberInfo::Kind::kMethod: {
-      // rebuild type args
-      Vector<TypeMetavar*> instantiated_vars;
-      member_info->type()->Instantiate(expr, &instantiated_vars)->ConstrainSubtypeOf(expr->type());
-
       Vector<Type*> type_args;
-      for (auto var : instantiated_vars) {
+      for (auto var :expr->member_req()->instantiated_vars()) {
         type_args.push_back(var->Zonk(type_env(), false, &allocated));
       }
       auto llvm_func = GetOrBuildMethod(object_type, expr->member_name(), type_args);

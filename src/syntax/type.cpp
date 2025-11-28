@@ -579,7 +579,9 @@ bool MemberRequirement::Accept(NominalType* nominal, TypePairSet* visited) {
   }
 
   this->set_resolved(member);
+  this->set_instantiated_vars(std::move(instantiated_vars));
   this->type()->adopt_types(&allocated);
+
   return true;
 }
 

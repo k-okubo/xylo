@@ -233,6 +233,7 @@ class MemberRequirement : public Type {
       type_(type),
       mutable_(false),
       resolved_(nullptr),
+      instantiated_vars_(),
       on_error_(nullptr) {}
 
   Identifier* name() const { return name_; }
@@ -246,6 +247,9 @@ class MemberRequirement : public Type {
   bool is_resolved() const { return resolved_ != nullptr; }
   MemberInfo* resolved() const { return resolved_; }
   void set_resolved(MemberInfo* resolved) { resolved_ = resolved; }
+
+  const Vector<TypeMetavar*>& instantiated_vars() const { return instantiated_vars_; }
+  void set_instantiated_vars(Vector<TypeMetavar*>&& vars) { instantiated_vars_ = std::move(vars); }
 
   std::function<void(const NominalType*)> on_error() const { return on_error_; }
   void set_on_error(std::function<void(const NominalType*)> on_error) { on_error_ = on_error; }
@@ -270,6 +274,7 @@ class MemberRequirement : public Type {
   Type* type_;
   bool mutable_;
   MemberInfo* resolved_;
+  Vector<TypeMetavar*> instantiated_vars_;
   std::function<void(const NominalType*)> on_error_;
 };
 

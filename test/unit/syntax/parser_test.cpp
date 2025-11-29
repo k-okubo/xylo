@@ -497,6 +497,22 @@ TEST(ParserTest, ParseBlock_MissingRParen) {
 }
 
 
+TEST(ParserTest, ParseBlock_MissingNew) {
+  auto source = "{a = Foo{x: 10, y: 20}}";
+  XyloContext context;
+  Lexer lexer(&context, source);
+  Parser parser(&context, &lexer);
+  auto scope = Scope::CreateRoot();
+
+  parser.ParseBlock(scope.get());
+  ASSERT_TRUE(parser.has_diagnostics());
+  EXPECT_EQ(parser.diagnostics().size(), 1);
+  EXPECT_EQ(parser.diagnostics()[0].message, "expected ';' or newline, found '{'");
+  EXPECT_EQ(parser.diagnostics()[0].position.start.line, 1);
+  EXPECT_EQ(parser.diagnostics()[0].position.start.column, 9);
+}
+
+
 TEST(ParserTest, ParseExpression_Precedence) {
   auto source = "a + b * c < -d(42) + (e << f)";
   XyloContext context;

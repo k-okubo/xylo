@@ -125,9 +125,8 @@ static int TernaryPrecedence(Token token) {
 }
 
 
-static constexpr auto kStatementEndTokens = {Token::kSemicolon, Token::kNewline, Token::kClass,
-                                             Token::kDef,       Token::kLet,     Token::kVar,
-                                             Token::kReturn,    Token::kLBrace,  Token::kRBrace};
+static constexpr auto kStatementEndTokens = {Token::kSemicolon, Token::kNewline, Token::kClass,  Token::kDef,
+                                             Token::kLet,       Token::kVar,     Token::kReturn, Token::kRBrace};
 
 static constexpr auto kExpressionEndTokens = {Token::kSemicolon, Token::kNewline, Token::kComma,
                                               Token::kRParen,    Token::kRBrack,  Token::kRBrace};
@@ -416,7 +415,10 @@ BlockPtr Parser::ParseBlock(Scope* scope) {
 StatementPtr Parser::ParseExpressionStatement(Scope* scope) {
   auto expr_pos = PeekTokenPosition();
   auto expr = ParseExpression(scope);
-  ExpectEndOfStatement();
+
+  if (!ExpectEndOfStatement()) {
+    Synchronize(kStatementEndTokens);
+  }
 
   auto stmt = ExpressionStatement::Create(std::move(expr));
   stmt->set_position(SourceRange(expr_pos, LastTokenPosition()));
@@ -428,23 +430,25 @@ StatementPtr Parser::ParseLetStatement(Scope* scope) {
   Expect(Token::kLet);
   auto let_pos = LastTokenPosition();
 
-  if (Expect(Token::kIdentifier)) {
-    auto var_name = LastTokenValue().as_identifier;
-    auto& ident_pos = LastTokenPosition();
-    auto symbol = Symbol::Create(Symbol::Kind::kLetVariable, scope, var_name, ident_pos);
-
-    Expect(Token::kAssign);
-    auto expr = ParseExpression(scope);
-    ExpectEndOfStatement();
-
-    auto stmt = LetStatement::Create(std::move(symbol), std::move(expr));
-    stmt->set_position(SourceRange(let_pos, LastTokenPosition()));
-    return stmt;
-
-  } else {
+  if (!Expect(Token::kIdentifier)) {
     Synchronize(kStatementEndTokens);
     return nullptr;
   }
+
+  auto var_name = LastTokenValue().as_identifier;
+  auto& ident_pos = LastTokenPosition();
+  auto symbol = Symbol::Create(Symbol::Kind::kLetVariable, scope, var_name, ident_pos);
+
+  Expect(Token::kAssign);
+  auto expr = ParseExpression(scope);
+
+  if (!ExpectEndOfStatement()) {
+    Synchronize(kStatementEndTokens);
+  }
+
+  auto stmt = LetStatement::Create(std::move(symbol), std::move(expr));
+  stmt->set_position(SourceRange(let_pos, LastTokenPosition()));
+  return stmt;
 }
 
 
@@ -452,23 +456,25 @@ StatementPtr Parser::ParseVarStatement(Scope* scope) {
   Expect(Token::kVar);
   auto var_pos = LastTokenPosition();
 
-  if (Expect(Token::kIdentifier)) {
-    auto var_name = LastTokenValue().as_identifier;
-    auto& ident_pos = LastTokenPosition();
-    auto symbol = Symbol::Create(Symbol::Kind::kVarVariable, scope, var_name, ident_pos);
-
-    Expect(Token::kAssign);
-    auto expr = ParseExpression(scope);
-    ExpectEndOfStatement();
-
-    auto stmt = VarStatement::Create(std::move(symbol), std::move(expr));
-    stmt->set_position(SourceRange(var_pos, LastTokenPosition()));
-    return stmt;
-
-  } else {
+  if (!Expect(Token::kIdentifier)) {
     Synchronize(kStatementEndTokens);
     return nullptr;
   }
+
+  auto var_name = LastTokenValue().as_identifier;
+  auto& ident_pos = LastTokenPosition();
+  auto symbol = Symbol::Create(Symbol::Kind::kVarVariable, scope, var_name, ident_pos);
+
+  Expect(Token::kAssign);
+  auto expr = ParseExpression(scope);
+
+  if (!ExpectEndOfStatement()) {
+    Synchronize(kStatementEndTokens);
+  }
+
+  auto stmt = VarStatement::Create(std::move(symbol), std::move(expr));
+  stmt->set_position(SourceRange(var_pos, LastTokenPosition()));
+  return stmt;
 }
 
 

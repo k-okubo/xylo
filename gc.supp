@@ -1,0 +1,12 @@
+{
+  ignore_boehm_gc_uninit_cond_GC_init
+  Memcheck:Cond
+  ...
+  fun:GC_init
+}
+{
+  ignore_boehm_gc_uninit_value8_GC_init
+  Memcheck:Value8
+  ...
+  fun:GC_init
+}

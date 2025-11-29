@@ -8,7 +8,7 @@ BIN_DIR=$(dirname "$0")/build/bin
 
 for f in $BIN_DIR/*_test; do
   if [ -x "$f" ]; then
-    valgrind --tool=memcheck --leak-check=full "$f" > /dev/null
+    valgrind --tool=memcheck --leak-check=full --suppressions=gc.supp "$f" > /dev/null
     echo
   fi
 done

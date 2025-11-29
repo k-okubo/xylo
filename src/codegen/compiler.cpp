@@ -12,12 +12,8 @@
 #include <cstddef>
 
 #include "xylo/codegen/module_lowerer.h"
+#include "xylo/runtime/memory.h"
 
-
-extern "C" void* xylo_malloc(size_t size) {
-  std::cout << "xylo_malloc: " << size << " bytes\n";
-  return malloc(size);
-}
 
 namespace xylo {
 

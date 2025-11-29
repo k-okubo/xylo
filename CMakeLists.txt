@@ -14,6 +14,20 @@ add_definitions(${LLVM_DEFINITIONS_LIST})
 llvm_map_components_to_libnames(LLVM_LIBS support core irreader native orcjit)
 
 
+# Boehm GC
+find_path(BOEHMGC_INCLUDE_DIR NAMES gc/gc.h)
+find_library(BOEHMGC_LIBRARY NAMES gc boehm-gc bdwgc)
+if(BOEHMGC_INCLUDE_DIR AND BOEHMGC_LIBRARY)
+  message(STATUS "Found Boehm GC: ${BOEHMGC_LIBRARY}")
+else()
+  message(FATAL_ERROR "Boehm GC (libgc) not found")
+endif()
+
+add_library(BoehmGC INTERFACE)
+target_include_directories(BoehmGC INTERFACE "${BOEHMGC_INCLUDE_DIR}")
+target_link_libraries(BoehmGC INTERFACE "${BOEHMGC_LIBRARY}")
+
+
 # GoogleTest
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)

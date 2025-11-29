@@ -1,4 +1,6 @@
 
+#include <gc/gc.h>
+
 #include <iostream>
 
 #include "xylo/codegen/compiler.h"
@@ -84,6 +86,8 @@ static void PrintError(const xylo::DiagnosticReporter& error_reporter) {
 
 
 int main(int argc, char** argv) {
+  GC_INIT();
+
   if (argc < 2) {
     std::cerr << "Usage: xylo <file>" << std::endl;
     return 1;

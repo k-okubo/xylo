@@ -1294,6 +1294,7 @@ Type* TypeMetavar::CloseOverMetavars(int depth, TypeSink* out_allocated) {
     // The metavar cannot be determined uniquely, so it should be made into a variable.
     outgoing = new TypeVariable(depth);
     this->ConstrainSameAs(outgoing);
+    out_allocated->adopt_type(TypePtr(outgoing));
   }
   return outgoing;
 }

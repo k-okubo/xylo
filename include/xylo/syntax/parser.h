@@ -33,6 +33,7 @@ class Parser : public DiagnosticReporter {
 
   DeclarationPtr ParseClassDeclaration(Scope* scope);
   ClassFieldPtr ParseClassField(Scope* scope);
+  EmbeddingClassPtr ParseEmbeddingClass(Scope* scope);
 
   DeclarationPtr ParseFunctionDeclaration(Scope* scope);
   FunctionExpressionPtr ParseLambdaExpression(Scope* scope);
@@ -50,8 +51,11 @@ class Parser : public DiagnosticReporter {
   ExpressionPtr ParseUnaryExpression(Scope* scope, int min_precedence);
   ExpressionPtr ParsePrefixExpression(Scope* scope);
   ExpressionPtr ParsePrimaryExpression(Scope* scope);
-  ExpressionPtr ParseNewExpression(Scope* scope);
   ExpressionPtr ParseConditionalExpression(Scope* scope);
+  ExpressionPtr ParseNewExpression(Scope* scope);
+
+  ObjectInitializerPtr ParseObjectInitializer(Scope* scope);
+  InitializerPtr ParseExpressionInitializer(Scope* scope);
 
   TypeReprPtr ParseTypeRepr();
   TypeReprPtr ParseFunctionTypeRepr();

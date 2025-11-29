@@ -82,6 +82,7 @@ const char* TokenName(Token token) {
     t[static_cast<size_t>(Token::kDoubleArrow)] = "'=>'";
 
     t[static_cast<size_t>(Token::kClass)] = "'class'";
+    t[static_cast<size_t>(Token::kEmbed)] = "'embed'";
     t[static_cast<size_t>(Token::kDef)] = "'def'";
     t[static_cast<size_t>(Token::kFn)] = "'fn'";
     t[static_cast<size_t>(Token::kReturn)] = "'return'";

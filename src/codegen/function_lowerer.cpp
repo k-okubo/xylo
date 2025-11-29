@@ -676,25 +676,54 @@ llvm::Value* FunctionLowerer::BuildNewExpression(NewExpression* expr) {
   auto struct_type = GetOrCreateStruct(expr->class_symbol());
   auto ptr = BuildHeapAlloc(struct_type);
 
-  // store class environment pointer
-  auto [env_ptr, _] = LoadClosureEnvironmentPtr(expr->class_symbol());
+  BuildObjectInitializer(expr->initializer(), nominal_type, ptr);
+
+  return ptr;
+}
+
+
+void FunctionLowerer::BuildExpressionInitializer(ExpressionInitializer* init, xylo::Type* var_type, llvm::Value* ptr) {
+  auto init_value = BuildExpression(init->expr());
+  auto store_value = ZonkAndAdjustType(init_value, init->expr()->type(), var_type);
+  builder_.CreateStore(store_value, ptr);
+}
+
+
+void FunctionLowerer::BuildObjectInitializer(ObjectInitializer* init, xylo::NominalType* obj_type, llvm::Value* ptr) {
+  auto class_lowerer = root()->GetClassLowerer(obj_type);
+  xylo_contract(class_lowerer != nullptr);
+
+  auto class_symbol = class_lowerer->class_symbol();
+  auto struct_type = class_lowerer->GetOrCreate();
+
+  // store closure environment pointer
+  auto [env_ptr, _] = LoadClosureEnvironmentPtr(class_symbol);
   auto env_ptr_field = builder_.CreateStructGEP(struct_type, ptr, 0);
   builder_.CreateStore(env_ptr, env_ptr_field);
 
   // store field init values
-  for (auto& init : expr->field_initializers()) {
-    auto field_name = init->field_name();
-    auto field_info = nominal_type->GetMember(field_name);
+  for (auto& entry : init->entries()) {
+    auto field_name = entry->name();
+    auto field_info = obj_type->GetMember(field_name);
     auto field_index = field_info->index();
     xylo_contract(field_index >= 0);
-
-    auto init_value = BuildExpression(init->expr());
-    auto store_value = ZonkAndAdjustType(init_value, init->expr()->type(), field_info->type());
     auto field_ptr = builder_.CreateStructGEP(struct_type, ptr, field_index + 1);
-    builder_.CreateStore(store_value, field_ptr);
-  }
 
-  return ptr;
+    BuildFieldEntry(entry.get(), field_info->type(), field_ptr);
+  }
+}
+
+
+void FunctionLowerer::BuildFieldEntry(FieldEntry* entry, xylo::Type* var_type, llvm::Value* ptr) {
+  switch (entry->value()->kind()) {
+    case Initializer::Kind::kExpression:
+      BuildExpressionInitializer(entry->value()->As<ExpressionInitializer>(), var_type, ptr);
+      break;
+
+    case Initializer::Kind::kObject:
+      BuildObjectInitializer(entry->value()->As<ObjectInitializer>(), var_type->As<NominalType>(), ptr);
+      break;
+  }
 }
 
 
@@ -703,13 +732,38 @@ llvm::Value* FunctionLowerer::BuildProjectionExpression(ProjectionExpression* ex
   auto object_ptr = BuildExpression(expr->object());
   auto object_type = expr->object()->type()->Zonk(type_env(), false, &allocated)->As<NominalType>();
   auto struct_type = GetStructType(object_type);
-  auto member_info = object_type->GetMember(expr->member_name());
+
+  Vector<MemberInfo*> member_path;
+  object_type->GetMemberPath(expr->member_name(), &member_path);
+  xylo_contract(!member_path.empty());
+
+  auto member_info = member_path[0];
   xylo_contract(member_info != nullptr);
+
+  auto get_field_ptr = [&](int limit) {
+    Vector<llvm::Value*> indices;
+    indices.push_back(builder_.getInt64(0));
+
+    // reverse path to build GEP
+    for (int i = member_path.size() - 1; i >= limit; --i) {
+      auto member = member_path[i];
+      indices.push_back(builder_.getInt32(member->index() + 1));
+    }
+
+    return builder_.CreateInBoundsGEP(struct_type, object_ptr, TypeConverter::ToArrayRef(indices));
+  };
+
+  auto get_method_owner_ptr = [&]() {
+    if (member_path.size() == 1) {
+      return object_ptr;
+    } else {
+      return get_field_ptr(1);
+    }
+  };
 
   switch (member_info->kind()) {
     case MemberInfo::Kind::kField: {
-      int field_index = member_info->index();
-      auto field_ptr = builder_.CreateStructGEP(struct_type, object_ptr, field_index + 1);
+      auto field_ptr = get_field_ptr(0);
 
       if (expr->is_lvalue()) {
         return field_ptr;
@@ -719,12 +773,16 @@ llvm::Value* FunctionLowerer::BuildProjectionExpression(ProjectionExpression* ex
       }
     }
 
+    case MemberInfo::Kind::kEmbedding:
+      return get_field_ptr(0);
+
     case MemberInfo::Kind::kMethod: {
       Vector<Type*> type_args;
-      for (auto var :expr->member_req()->instantiated_vars()) {
+      for (auto var : expr->member_req()->instantiated_vars()) {
         type_args.push_back(var->Zonk(type_env(), false, &allocated));
       }
-      auto llvm_func = GetOrBuildMethod(object_type, expr->member_name(), type_args);
+      auto llvm_func = GetOrBuildMethod(member_info->owner(), expr->member_name(), type_args);
+      object_ptr = get_method_owner_ptr();
 
       if (out_closure_env != nullptr) {
         // return func and object pointer as env
@@ -864,7 +922,7 @@ std::pair<llvm::Value*, llvm::StructType*> FunctionLowerer::LoadClosureEnvironme
   llvm::Value* env_ptr;
   llvm::StructType* env_type;
 
-  if (symbol->scope()->depth() < xylo_func()->scope()->depth()) {
+  if (symbol->scope()->depth() < this->scope_depth()) {
     lowerer = this->parent();
     env_ptr = this->closure_env_ptr();
     env_type = lowerer->scope_data_type();
@@ -883,6 +941,7 @@ std::pair<llvm::Value*, llvm::StructType*> FunctionLowerer::LoadClosureEnvironme
     env_type = lowerer->scope_data_type();
   }
 
+  xylo_contract(symbol->scope()->depth() == lowerer->scope_depth());
   return {env_ptr, env_type};
 }
 

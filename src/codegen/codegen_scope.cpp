@@ -111,7 +111,7 @@ llvm::StructType* CodegenScope::GetOrCreateStruct(Symbol* symbol) {
     }
   }
 
-  return class_lowerer->GetOrCreateStruct();
+  return class_lowerer->GetOrCreate();
 }
 
 

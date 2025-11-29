@@ -2353,4 +2353,120 @@ TEST(InferencerTest, NestedClassInPolymorphicFunction2) {
 #endif
 
 
+TEST(InferencerTest, Embedding_Basic) {
+  auto source = R"(
+    def main() {
+      let foo = new Foo{
+          a: 10,
+          Bar: {
+            b: 3.14
+          }
+        }
+
+      let x = foo.a + foo.b
+    }
+
+    class Foo {
+      a: int
+      embed Bar
+    }
+    class Bar {
+      b: float
+    }
+  )";
+
+  XyloContext context;
+  Externals externals(&context);
+  auto file_ast = GetResolvedAST(&context, &externals, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(inferencer.has_diagnostics());
+
+  ASSERT_GE(file_ast->declarations().size(), 3);
+  ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
+  auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
+  auto& main_statements = main_decl->func()->body()->statements();
+  ASSERT_GE(main_statements.size(), 2);
+
+  auto let_stmt = main_statements[1]->As<LetStatement>();
+  auto let_expr = let_stmt->expr();
+
+  Substitution subst;
+  TypeSink allocated;
+  EXPECT_EQ(let_expr->type()->Zonk(&subst, true, &allocated), context.float_type());
+}
+
+
+TEST(InferencerTest, Embedding_AmbiguousField) {
+  auto source = R"(
+    def main() {
+      let foo = new Foo{
+          a: 10,
+          Bar: {
+            b: 3.14
+          },
+          Baz: {
+            b: 2.71
+          }
+        }
+
+      let x = foo.b
+    }
+
+    class Foo {
+      a: int
+      embed Bar
+      embed Baz
+    }
+    class Bar {
+      b: float
+    }
+    class Baz {
+      b: float
+    }
+  )";
+
+  XyloContext context;
+  Externals externals(&context);
+  auto file_ast = GetResolvedAST(&context, &externals, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "cannot find member 'b'");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 13);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 19);
+}
+
+
+TEST(InferencerTest, Embedding_Cyclic) {
+  auto source = R"(
+    class A {
+      embed B
+    }
+    class B {
+      embed A
+    }
+
+    def main() {
+      let a = new A{}
+    }
+  )";
+
+  XyloContext context;
+  Externals externals(&context);
+  auto file_ast = GetResolvedAST(&context, &externals, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 2);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "cyclic embedding detected");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 13);
+}
+
+
 }  // namespace xylo

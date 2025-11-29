@@ -434,4 +434,197 @@ TEST(ClassTest, MethodConstraintInNestedFunc) {
 }
 
 
+TEST(ClassTest, Embedding_PromotedFieldRead) {
+  auto source = R"(
+    class Bar {
+      bar: int
+    }
+
+    class Foo {
+      foo: int
+      embed Bar
+    }
+
+    def main() {
+      let foo = new Foo {
+        foo: 12,
+        Bar: { bar: 30 },
+      }
+      return foo.foo + foo.bar
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
+TEST(ClassTest, Embedding_ExplicitFieldRead) {
+  auto source = R"(
+    class Bar {
+      bar: int
+    }
+
+    class Foo {
+      foo: int
+      embed Bar
+    }
+
+    def main() {
+      let foo = new Foo {
+        foo: 12,
+        Bar: { bar: 30 },
+      }
+      return foo.foo + foo.Bar.bar
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
+TEST(ClassTest, Embedding_PromotedFieldWrite) {
+  auto source = R"(
+    class Bar {
+      bar: int
+    }
+
+    class Foo {
+      foo: int
+      embed Bar
+    }
+
+    def main() {
+      let foo = new Foo {
+        foo: 0,
+        Bar: { bar: 0 },
+      }
+      foo.foo = 12
+      foo.bar = 30
+      return foo.foo + foo.bar
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
+TEST(ClassTest, Embedding_ExplicitFieldWrite) {
+  auto source = R"(
+    class Bar {
+      bar: int
+    }
+
+    class Foo {
+      foo: int
+      embed Bar
+    }
+
+    def main() {
+      let foo = new Foo {
+        foo: 0,
+        Bar: { bar: 0 },
+      }
+      foo.foo = 12
+      foo.Bar.bar = 30
+      return foo.foo + foo.Bar.bar
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
+TEST(ClassTest, Embedding_PromotedMethod) {
+  auto source = R"(
+    class Bar {
+      bar: int
+      def get_bar() {
+        return bar
+      }
+    }
+
+    class Foo {
+      foo: int
+      embed Bar
+
+      def get_foo() {
+        return foo
+      }
+    }
+
+    def main() {
+      let foo = new Foo {
+        foo: 12,
+        Bar: { bar: 30 },
+      }
+      return foo.get_foo() + foo.get_bar()
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
+TEST(ClassTest, Embedding_ExplicitMethod) {
+  auto source = R"(
+    class Bar {
+      bar: int
+      def get_bar() {
+        return bar
+      }
+    }
+
+    class Foo {
+      foo: int
+      embed Bar
+
+      def get_foo() {
+        return foo
+      }
+    }
+
+    def main() {
+      let foo = new Foo {
+        foo: 12,
+        Bar: { bar: 30 },
+      }
+      return foo.get_foo() + foo.Bar.get_bar()
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
+TEST(ClassTest, Embedding_Priority) {
+  auto source = R"(
+    class Bar {
+      value: int
+    }
+
+    class Foo {
+      value: int
+      embed Bar
+    }
+
+    def main() {
+      let foo = new Foo {
+        value: 10,
+        Bar: { value: 30 },
+      }
+      return foo.value
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 10);
+}
+
+
 }  // namespace xylo

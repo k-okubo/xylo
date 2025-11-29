@@ -154,6 +154,7 @@ class NominalType : public Type {
       name_(name),
       supers_(),
       fields_(),
+      embeddings_(),
       methods_(),
       member_map_() {}
 
@@ -169,7 +170,13 @@ class NominalType : public Type {
   bool is_atomic_type() const override { return true; }
 
   MemberInfo* GetMember(Identifier* member_name) const;
+  MemberInfo* GetDeclaredMember(Identifier* member_name) const;
+  bool GetMemberPath(Identifier* member_name, Vector<MemberInfo*>* out_path) const;
+  void FindEmbededMembers(Identifier* member_name, Vector<MemberInfo*>* out_members) const;
+  bool HasEmbedding(NominalType* clazz) const;
+
   MemberInfo* AddField(Identifier* field_name, Type* field_type);
+  MemberInfo* AddEmbedding(Identifier* field_name, NominalType* clazz);
   MemberInfo* AddMethod(Identifier* method_name, Type* method_type);
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
@@ -179,6 +186,7 @@ class NominalType : public Type {
   Identifier* name_;
   Vector<NominalType*> supers_;
   Vector<MemberInfo*> fields_;
+  Vector<MemberInfo*> embeddings_;
   Vector<MemberInfo*> methods_;
   Map<Identifier*, MemberInfoPtr> member_map_;
 };
@@ -188,6 +196,7 @@ class MemberInfo {
  public:
   enum class Kind {
     kField,
+    kEmbedding,
     kMethod,
   };
 

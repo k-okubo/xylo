@@ -78,6 +78,10 @@ void Resolver::VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* 
     VisitClassField(field.get(), &local_ctx);
   }
 
+  for (auto& embedding : decl->embeddings()) {
+    VisitEmbeddingClass(embedding.get(), &local_ctx);
+  }
+
   for (auto& decl : decl->declarations()) {
     PrevisitDeclaration(decl.get(), &local_ctx);
   }
@@ -98,6 +102,19 @@ void Resolver::VisitClassField(ClassField* field, ResolutionContext* ctx) {
 
   if (field->type_repr() != nullptr) {
     VisitTypeRepr(field->type_repr(), ctx);
+  }
+}
+
+
+void Resolver::VisitEmbeddingClass(EmbeddingClass* embedding, ResolutionContext* ctx) {
+  auto symbol = ctx->name_table->Lookup(embedding->name());
+
+  if (symbol == nullptr) {
+    ErrorUndeclared(embedding->position(), embedding->name());
+  } else if (symbol->kind() != Symbol::Kind::kClass) {
+    ErrorValueAsType(embedding->position(), symbol);
+  } else {
+    embedding->set_symbol(symbol);
   }
 }
 
@@ -362,15 +379,7 @@ void Resolver::VisitNewExpression(NewExpression* expr, ResolutionContext* ctx) {
     expr->set_class_symbol(class_symbol);
   }
 
-  Set<Identifier*> initialized_fields;
-
-  for (auto& init : expr->field_initializers()) {
-    auto [_, success] = initialized_fields.emplace(init->field_name());
-    if (!success) {
-      ReportError(init->position(), "duplicate field name '" + init->field_name()->str().cpp_str() + "'");
-    }
-    VisitExpression(init->expr(), ctx);
-  }
+  VisitObjectInitializer(expr->initializer(), ctx);
 }
 
 
@@ -384,6 +393,38 @@ void Resolver::VisitBlockExpression(BlockExpression* expr, ResolutionContext* ct
   ResolutionContext local_ctx = {&local_table, ctx->enclosing_class, ctx->enclosing_func};
 
   VisitBlock(expr->block(), &local_ctx);
+}
+
+
+void Resolver::VisitExpressionInitializer(ExpressionInitializer* initializer, ResolutionContext* ctx) {
+  VisitExpression(initializer->expr(), ctx);
+}
+
+
+void Resolver::VisitObjectInitializer(ObjectInitializer* initializer, ResolutionContext* ctx) {
+  Set<Identifier*> initialized_fields;
+
+  for (auto& entry : initializer->entries()) {
+    auto [_, success] = initialized_fields.emplace(entry->name());
+    if (!success) {
+      ReportError(entry->position(), "duplicate field name '" + entry->name()->str().cpp_str() + "'");
+    }
+
+    VisitFieldEntry(entry.get(), ctx);
+  }
+}
+
+
+void Resolver::VisitFieldEntry(FieldEntry* entry, ResolutionContext* ctx) {
+  switch (entry->value()->kind()) {
+    case Initializer::Kind::kExpression:
+      VisitExpressionInitializer(entry->value()->As<ExpressionInitializer>(), ctx);
+      break;
+
+    case Initializer::Kind::kObject:
+      VisitObjectInitializer(entry->value()->As<ObjectInitializer>(), ctx);
+      break;
+  }
 }
 
 

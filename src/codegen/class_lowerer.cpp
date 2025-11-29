@@ -6,7 +6,7 @@
 namespace xylo {
 
 
-llvm::StructType* ClassLowerer::GetOrCreateStruct() {
+llvm::StructType* ClassLowerer::GetOrCreate() {
   if (llvm_struct_ != nullptr) {
     return llvm_struct_;
   }
@@ -33,9 +33,37 @@ llvm::Function* ClassLowerer::GetOrBuildMethod(Identifier* name, const Vector<Ty
 
 
 llvm::StructType* ClassLowerer::CreateStruct() {
-  auto nominal = xylo_class()->symbol()->type()->As<NominalType>();
+  // ensure embedded classes are created first
+  for (auto& embed : xylo_class()->embeddings()) {
+    GetOrCreateStruct(embed->symbol());
+  }
+
   TypeConverter type_converter(xylo_context(), llvm_context());
-  return type_converter.CreateStructType(nominal);
+  auto nominal = xylo_class()->symbol()->type()->As<NominalType>();
+
+  Vector<llvm::Type*> field_types;
+  field_types.push_back(llvm::PointerType::getUnqual(llvm_context()));  // closure environment
+
+  for (auto field : nominal->fields()) {
+    switch (field->kind()) {
+      case MemberInfo::Kind::kField:
+        field_types.push_back(type_converter.Convert(field->type(), true));
+        break;
+
+      case MemberInfo::Kind::kEmbedding: {
+        auto embed_type = field->type()->As<NominalType>();
+        auto embed_struct = root()->GetClassLowerer(embed_type)->GetOrCreate();
+        field_types.push_back(embed_struct);
+        break;
+      }
+
+      case MemberInfo::Kind::kMethod:
+        xylo_unreachable();
+    }
+  }
+
+  auto name = nominal->name()->str().cpp_view();
+  return llvm::StructType::create(llvm_context(), type_converter.ToArrayRef(field_types), name);
 }
 
 

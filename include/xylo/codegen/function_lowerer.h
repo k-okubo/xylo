@@ -81,6 +81,10 @@ class FunctionLowerer : public CodegenScope {
   llvm::Value* BuildProjectionExpression(ProjectionExpression* expr, llvm::Value** out_closure_env);
   llvm::Value* BuildBlockExpression(BlockExpression* expr);
 
+  void BuildExpressionInitializer(ExpressionInitializer* init, xylo::Type* var_type, llvm::Value* ptr);
+  void BuildObjectInitializer(ObjectInitializer* init, xylo::NominalType* obj_type, llvm::Value* ptr);
+  void BuildFieldEntry(FieldEntry* entry, xylo::Type* var_type, llvm::Value* ptr);
+
  protected:
   llvm::Type* ZonkAndConvert(xylo::Type* type, bool function_as_pointer);
   llvm::Value* ZonkAndAdjustType(llvm::Value* value, xylo::Type* from_type, xylo::Type* to_type);
@@ -95,9 +99,7 @@ class FunctionLowerer : public CodegenScope {
   llvm::StructType* heap_frame_type() const { return heap_frame_type_; }
   void set_heap_frame_type(llvm::StructType* type) { heap_frame_type_ = type; }
 
-  llvm::StructType* GetStructType(xylo::NominalType* type) {
-    return root()->GetClassLowerer(type)->GetOrCreateStruct();
-  }
+  llvm::StructType* GetStructType(xylo::NominalType* type) { return root()->GetClassLowerer(type)->GetOrCreate(); }
 
   llvm::Function* GetOrBuildMethod(xylo::NominalType* type, Identifier* method_name,
                                    const Vector<xylo::Type*>& type_args) {

@@ -205,9 +205,7 @@ void Verifier::VisitConditionalExpression(ConditionalExpression* expr, FlowState
 
 
 void Verifier::VisitNewExpression(NewExpression* expr, FlowState* state) {
-  for (auto& initializer : expr->field_initializers()) {
-    VisitExpression(initializer->expr(), state);
-  }
+  VisitObjectInitializer(expr->initializer(), state);
 }
 
 
@@ -218,6 +216,31 @@ void Verifier::VisitProjectionExpression(ProjectionExpression* expr, FlowState* 
 
 void Verifier::VisitBlockExpression(BlockExpression* expr, FlowState* state) {
   VisitBlock(expr->block(), state);
+}
+
+
+void Verifier::VisitExpressionInitializer(ExpressionInitializer* init, FlowState* state) {
+  VisitExpression(init->expr(), state);
+}
+
+
+void Verifier::VisitObjectInitializer(ObjectInitializer* init, FlowState* state) {
+  for (auto& entry : init->entries()) {
+    VisitFieldEntry(entry.get(), state);
+  }
+}
+
+
+void Verifier::VisitFieldEntry(FieldEntry* entry, FlowState* state) {
+  switch (entry->value()->kind()) {
+    case Initializer::Kind::kExpression:
+      VisitExpressionInitializer(entry->value()->As<ExpressionInitializer>(), state);
+      break;
+
+    case Initializer::Kind::kObject:
+      VisitObjectInitializer(entry->value()->As<ObjectInitializer>(), state);
+      break;
+  }
 }
 
 

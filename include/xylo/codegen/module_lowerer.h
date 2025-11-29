@@ -28,7 +28,7 @@ class ModuleLowerer : public CodegenScope {
   llvm::StructType* closure_type();
   llvm::Function* xylo_malloc();
 
-  int scope_depth() const override { return 0; }
+  int scope_depth() const override { return 1; }
   llvm::StructType* scope_data_type() const override { return nullptr; }
 
   void RegisterTopLevelDecls(FileAST* file_ast);

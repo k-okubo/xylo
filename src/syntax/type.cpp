@@ -10,9 +10,19 @@ namespace xylo {
 
 
 MemberInfo* NominalType::GetMember(Identifier* member_name) const {
-  auto it = member_map_.find(member_name);
-  if (it != member_map_.end()) {
-    return it->second.get();
+  {
+    auto member = GetDeclaredMember(member_name);
+    if (member != nullptr) {
+      return member;
+    }
+  }
+
+  {
+    Vector<MemberInfo*> embeded_members;
+    FindEmbededMembers(member_name, &embeded_members);
+    if (embeded_members.size() == 1) {
+      return embeded_members[0];
+    }
   }
 
   for (auto super : supers()) {
@@ -26,8 +36,75 @@ MemberInfo* NominalType::GetMember(Identifier* member_name) const {
 }
 
 
+MemberInfo* NominalType::GetDeclaredMember(Identifier* member_name) const {
+  auto it = member_map_.find(member_name);
+  if (it != member_map_.end()) {
+    return it->second.get();
+  }
+  return nullptr;
+}
+
+
+bool NominalType::GetMemberPath(Identifier* member_name, Vector<MemberInfo*>* out_path) const {
+  {
+    auto member = GetDeclaredMember(member_name);
+    if (member != nullptr) {
+      out_path->push_back(member);
+      return true;
+    }
+  }
+
+  for (auto embedding : embeddings_) {
+    auto embed_type = embedding->type()->As<NominalType>();
+    if (embed_type->GetMemberPath(member_name, out_path)) {
+      out_path->push_back(embedding);
+      return true;
+    }
+  }
+
+  // TODO: supers
+
+  return false;
+}
+
+
+void NominalType::FindEmbededMembers(Identifier* member_name, Vector<MemberInfo*>* out_members) const {
+  for (auto embedding : embeddings_) {
+    auto embed_type = embedding->type()->As<NominalType>();
+    auto member = embed_type->GetDeclaredMember(member_name);
+    if (member != nullptr) {
+      out_members->push_back(member);
+    }
+    embed_type->FindEmbededMembers(member_name, out_members);
+  }
+}
+
+
+bool NominalType::HasEmbedding(NominalType* clazz) const {
+  if (this == clazz) {
+    return true;
+  }
+
+  for (auto embedding : embeddings_) {
+    if (embedding->type()->As<NominalType>()->HasEmbedding(clazz)) {
+      return true;
+    }
+  }
+
+#if 0
+  for (auto super : supers_) {
+    if (super->HasEmbedding(clazz)) {
+      return true;
+    }
+  }
+#endif
+
+  return false;
+}
+
+
 MemberInfo* NominalType::AddField(Identifier* field_name, Type* field_type) {
-  if (GetMember(field_name) != nullptr) {
+  if (GetDeclaredMember(field_name) != nullptr) {
     return nullptr;
   }
 
@@ -40,8 +117,24 @@ MemberInfo* NominalType::AddField(Identifier* field_name, Type* field_type) {
 }
 
 
+MemberInfo* NominalType::AddEmbedding(Identifier* field_name, NominalType* clazz) {
+  if (GetDeclaredMember(field_name) != nullptr) {
+    return nullptr;
+  }
+
+  // embedding is also a field
+  int index = fields_.size();
+  auto embedding = new MemberInfo(this, MemberInfo::Kind::kEmbedding, index, field_name, clazz);
+
+  fields_.push_back(embedding);
+  embeddings_.push_back(embedding);
+  member_map_.emplace(field_name, MemberInfoPtr(embedding));
+  return embedding;
+}
+
+
 MemberInfo* NominalType::AddMethod(Identifier* method_name, Type* method_type) {
-  if (GetMember(method_name) != nullptr) {
+  if (GetDeclaredMember(method_name) != nullptr) {
     return nullptr;
   }
 

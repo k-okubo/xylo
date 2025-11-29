@@ -82,6 +82,16 @@ class Inferencer : public DiagnosticReporter {
   void VisitProjectionExpression(ProjectionExpression* expr, InferenceContext* ctx);
   void VisitBlockExpression(BlockExpression* expr, InferenceContext* ctx);
 
+  struct VariableContext {
+    const SourceRange& position;
+    Identifier* name;
+    Type* type;
+  };
+
+  void VisitExpressionInitializer(ExpressionInitializer* init, VariableContext* vctx, InferenceContext* ctx);
+  void VisitObjectInitializer(ObjectInitializer* init, VariableContext* vctx, InferenceContext* ctx);
+  void VisitFieldEntry(FieldEntry* entry, MemberInfo* member_info, InferenceContext* ctx);
+
   Type* ConvertDeclarableTypeRepr(TypeRepr* type_repr, TypeSink* allocated);
   Type* ConvertTypeRepr(TypeRepr* type_repr, TypeSink* allocated);
   Type* ConvertNamedTypeRepr(NamedTypeRepr* type_repr, TypeSink* allocated);

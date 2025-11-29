@@ -23,8 +23,6 @@ class TypeConverter {
   llvm::Type* ConvertNominalType(xylo::NominalType* type);
   llvm::Type* ConvertFunctionType(xylo::FunctionType* type, bool as_pointer);
 
-  llvm::StructType* CreateStructType(xylo::NominalType* type);
-
   template <typename T>
   static llvm::ArrayRef<T> ToArrayRef(const xylo::Vector<T>& vec) {
     return llvm::ArrayRef<T>(vec.data(), vec.size());

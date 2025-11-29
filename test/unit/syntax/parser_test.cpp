@@ -682,15 +682,18 @@ TEST(ParserTest, ParseExpression_New) {
   ASSERT_FALSE(parser.has_diagnostics());
 
   auto new_expr = expr->As<NewExpression>();
-  auto& init_list = new_expr->field_initializers();
+  auto initializer = new_expr->initializer();
+  auto& init_list = initializer->entries();
   ASSERT_EQ(init_list.size(), 2u);
 
-  EXPECT_EQ(init_list[0]->field_name()->str().cpp_str(), "x");
-  auto x_value = init_list[0]->expr()->As<IntegerLiteral>();
+  EXPECT_EQ(init_list[0]->name()->str().cpp_str(), "x");
+  auto x_expr_init = init_list[0]->value()->As<ExpressionInitializer>();
+  auto x_value = x_expr_init->expr()->As<IntegerLiteral>();
   EXPECT_EQ(x_value->value(), 10);
 
-  EXPECT_EQ(init_list[1]->field_name()->str().cpp_str(), "y");
-  auto y_value = init_list[1]->expr()->As<IntegerLiteral>();
+  EXPECT_EQ(init_list[1]->name()->str().cpp_str(), "y");
+  auto y_expr_init = init_list[1]->value()->As<ExpressionInitializer>();
+  auto y_value = y_expr_init->expr()->As<IntegerLiteral>();
   EXPECT_EQ(y_value->value(), 20);
 }
 

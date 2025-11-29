@@ -71,23 +71,3 @@ llvm::Type* TypeConverter::ConvertFunctionType(xylo::FunctionType* type, bool as
   auto return_type = Convert(type->return_type(), true);
   return llvm::FunctionType::get(return_type, ToArrayRef(param_types), false);
 }
-
-
-llvm::StructType* TypeConverter::CreateStructType(xylo::NominalType* type) {
-  xylo::Vector<llvm::Type*> field_types;
-  field_types.push_back(llvm::PointerType::getUnqual(llvm_context_));  // closure environment
-  for (auto field : type->fields()) {
-    xylo::Substitution env;
-    xylo::TypeSink allocated;
-    auto xylo_field_type = field->type()->Zonk(&env, false, &allocated);
-
-    if (xylo_field_type != nullptr) {
-      field_types.push_back(Convert(xylo_field_type, true));
-    } else {
-      field_types.push_back(llvm::Type::getInt64Ty(llvm_context_));
-    }
-  }
-
-  auto name = type->name()->str().cpp_view();
-  return llvm::StructType::create(llvm_context_, ToArrayRef(field_types), name);
-}

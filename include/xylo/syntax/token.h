@@ -71,6 +71,7 @@ enum class Token {
   kDoubleArrow,
 
   kClass,
+  kEmbed,
   kDef,
   kFn,
   kReturn,

@@ -29,8 +29,11 @@ class FunctionExpression;
 class TupleTypeRepr;
 
 class ClassField;
+class EmbeddingClass;
 class FunctionParam;
-class FieldInitializer;
+class Initializer;
+class ObjectInitializer;
+class FieldEntry;
 
 using ScopePtr = std::unique_ptr<Scope>;
 using SymbolPtr = std::unique_ptr<Symbol>;
@@ -47,8 +50,11 @@ using FunctionExpressionPtr = std::unique_ptr<FunctionExpression>;
 using TupleTypeReprPtr = std::unique_ptr<TupleTypeRepr>;
 
 using ClassFieldPtr = std::unique_ptr<ClassField>;
+using EmbeddingClassPtr = std::unique_ptr<EmbeddingClass>;
 using FunctionParamPtr = std::unique_ptr<FunctionParam>;
-using FieldInitializerPtr = std::unique_ptr<FieldInitializer>;
+using InitializerPtr = std::unique_ptr<Initializer>;
+using ObjectInitializerPtr = std::unique_ptr<ObjectInitializer>;
+using FieldEntryPtr = std::unique_ptr<FieldEntry>;
 
 
 class Scope {
@@ -222,6 +228,7 @@ class ClassDeclaration : public Declaration {
       Declaration(Kind::kClass, std::move(symbol)),
       scope_(nullptr),
       fields_(),
+      embeddings_(),
       declarations_() {}
 
  public:
@@ -231,12 +238,16 @@ class ClassDeclaration : public Declaration {
   const Vector<ClassFieldPtr>& fields() const { return fields_; }
   void add_field(ClassFieldPtr&& field) { fields_.push_back(std::move(field)); }
 
+  const Vector<EmbeddingClassPtr>& embeddings() const { return embeddings_; }
+  void add_embedding(EmbeddingClassPtr&& embedding) { embeddings_.push_back(std::move(embedding)); }
+
   const Vector<DeclarationPtr>& declarations() const { return declarations_; }
   void add_declaration(DeclarationPtr&& decl) { declarations_.push_back(std::move(decl)); }
 
  private:
   ScopePtr scope_;
   Vector<ClassFieldPtr> fields_;
+  Vector<EmbeddingClassPtr> embeddings_;
   Vector<DeclarationPtr> declarations_;
 };
 
@@ -262,6 +273,35 @@ class ClassField {
  private:
   SymbolPtr symbol_;
   TypeReprPtr type_repr_;
+};
+
+
+class EmbeddingClass {
+ public:
+  static auto Create(Identifier* name) {
+    auto p = new EmbeddingClass(name);
+    return std::unique_ptr<EmbeddingClass>(p);
+  }
+
+ protected:
+  explicit EmbeddingClass(Identifier* name) :
+      name_(name),
+      position_(),
+      symbol_(nullptr) {}
+
+ public:
+  Identifier* name() const { return name_; }
+
+  const SourceRange& position() const { return position_; }
+  void set_position(const SourceRange& position) { position_ = position; }
+
+  Symbol* symbol() const { return symbol_; }
+  void set_symbol(Symbol* symbol) { symbol_ = symbol; }
+
+ private:
+  Identifier* name_;
+  SourceRange position_;
+  Symbol* symbol_;
 };
 
 
@@ -827,61 +867,29 @@ class ConditionalExpression : public Expression {
 
 class NewExpression : public Expression {
  public:
-  static auto Create(Identifier* class_name) {
-    auto p = new NewExpression(class_name);
+  static auto Create(Identifier* class_name, ObjectInitializerPtr&& initializer) {
+    auto p = new NewExpression(class_name, std::move(initializer));
     return std::unique_ptr<NewExpression>(p);
   }
 
  protected:
-  explicit NewExpression(Identifier* class_name) :
+  explicit NewExpression(Identifier* class_name, ObjectInitializerPtr&& initializer) :
       Expression(Kind::kNew),
       class_name_(class_name),
-      class_symbol_(nullptr),
-      field_initializers_() {}
+      initializer_(std::move(initializer)),
+      class_symbol_(nullptr) {}
 
  public:
   Identifier* class_name() const { return class_name_; }
+  ObjectInitializer* initializer() const { return initializer_.get(); }
 
   Symbol* class_symbol() const { return class_symbol_; }
   void set_class_symbol(Symbol* class_symbol) { class_symbol_ = class_symbol; }
 
-  const Vector<FieldInitializerPtr>& field_initializers() const { return field_initializers_; }
-
-  void add_field_initializer(FieldInitializerPtr&& initializer) {
-    field_initializers_.push_back(std::move(initializer));
-  }
-
  private:
   Identifier* class_name_;
+  ObjectInitializerPtr initializer_;
   Symbol* class_symbol_;
-  Vector<FieldInitializerPtr> field_initializers_;
-};
-
-
-class FieldInitializer {
- public:
-  static auto Create(Identifier* field_name, ExpressionPtr&& expr) {
-    auto p = new FieldInitializer(field_name, std::move(expr));
-    return std::unique_ptr<FieldInitializer>(p);
-  }
-
- protected:
-  explicit FieldInitializer(Identifier* field_name, ExpressionPtr&& expr) :
-      field_name_(field_name),
-      expr_(std::move(expr)),
-      position_() {}
-
- public:
-  Identifier* field_name() const { return field_name_; }
-  Expression* expr() const { return expr_.get(); }
-
-  const SourceRange& position() const { return position_; }
-  void set_position(const SourceRange& position) { position_ = position; }
-
- private:
-  Identifier* field_name_;
-  ExpressionPtr expr_;
-  SourceRange position_;
 };
 
 
@@ -935,6 +943,99 @@ class BlockExpression : public Expression {
 
  private:
   BlockPtr block_;
+};
+
+
+class Initializer : public Downcastable {
+ public:
+  enum class Kind {
+    kExpression,
+    kObject,
+  };
+
+ protected:
+  explicit Initializer(Kind kind) :
+      kind_(kind) {}
+
+ public:
+  virtual ~Initializer() = default;
+
+  Initializer(const Initializer&) = delete;
+  Initializer& operator=(const Initializer&) = delete;
+
+  Kind kind() const { return kind_; }
+
+ private:
+  Kind kind_;
+};
+
+
+class ExpressionInitializer : public Initializer {
+ public:
+  static auto Create(ExpressionPtr&& expr) {
+    auto p = new ExpressionInitializer(std::move(expr));
+    return std::unique_ptr<ExpressionInitializer>(p);
+  }
+
+ protected:
+  explicit ExpressionInitializer(ExpressionPtr&& expr) :
+      Initializer(Kind::kExpression),
+      expr_(std::move(expr)) {}
+
+ public:
+  Expression* expr() const { return expr_.get(); }
+
+ private:
+  ExpressionPtr expr_;
+};
+
+
+class ObjectInitializer : public Initializer {
+ public:
+  static auto Create() {
+    auto p = new ObjectInitializer();
+    return std::unique_ptr<ObjectInitializer>(p);
+  }
+
+ protected:
+  ObjectInitializer() :
+      Initializer(Kind::kObject),
+      entries_() {}
+
+ public:
+  const Vector<FieldEntryPtr>& entries() const { return entries_; }
+
+  void add_entry(FieldEntryPtr&& entry) { entries_.push_back(std::move(entry)); }
+
+ private:
+  Vector<FieldEntryPtr> entries_;
+};
+
+
+class FieldEntry {
+ public:
+  static auto Create(Identifier* name, InitializerPtr&& value) {
+    auto p = new FieldEntry(name, std::move(value));
+    return std::unique_ptr<FieldEntry>(p);
+  }
+
+ protected:
+  explicit FieldEntry(Identifier* name, InitializerPtr&& value) :
+      name_(name),
+      value_(std::move(value)),
+      position_() {}
+
+ public:
+  Identifier* name() const { return name_; }
+  Initializer* value() const { return value_.get(); }
+
+  const SourceRange& position() const { return position_; }
+  void set_position(const SourceRange& position) { position_ = position; }
+
+ private:
+  Identifier* name_;
+  InitializerPtr value_;
+  SourceRange position_;
 };
 
 

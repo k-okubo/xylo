@@ -179,6 +179,10 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
         break;
       }
 
+      case Token::kEmbed:
+        clazz->add_embedding(ParseEmbeddingClass(inner_scope.get()));
+        break;
+
       case Token::kClass:
         ReportError(PeekTokenPosition(), "unsupported class declaration inside class");
         clazz->add_declaration(ParseClassDeclaration(inner_scope.get()));
@@ -217,6 +221,19 @@ ClassFieldPtr Parser::ParseClassField(Scope* scope) {
 
   ExpectEndOfStatement();
   return field;
+}
+
+
+EmbeddingClassPtr Parser::ParseEmbeddingClass(Scope* scope) {
+  Expect(Token::kEmbed);
+  Expect(Token::kIdentifier);
+  auto embed_name = LastTokenValue().as_identifier;
+  auto& embed_ident_pos = LastTokenPosition();
+  auto embedding_class = EmbeddingClass::Create(embed_name);
+  embedding_class->set_position(embed_ident_pos);
+
+  ExpectEndOfStatement();
+  return embedding_class;
 }
 
 
@@ -658,12 +675,6 @@ ExpressionPtr Parser::ParsePrimaryExpression(Scope* scope) {
       return expr;
     }
 
-    case Token::kNew:
-      return ParseNewExpression(scope);
-
-    case Token::kIf:
-      return ParseConditionalExpression(scope);
-
     case Token::kFn: {
       Consume();
       auto func_expr = ParseLambdaExpression(scope);
@@ -675,55 +686,17 @@ ExpressionPtr Parser::ParsePrimaryExpression(Scope* scope) {
       }
     }
 
+    case Token::kIf:
+      return ParseConditionalExpression(scope);
+
+    case Token::kNew:
+      return ParseNewExpression(scope);
+
     default:
       ErrorUnexpected();
       Synchronize(kExpressionEndTokens);
       return NullExpression::Create();
   }
-}
-
-
-ExpressionPtr Parser::ParseNewExpression(Scope* scope) {
-  Expect(Token::kNew);
-  Expect(Token::kIdentifier);
-  auto class_name = LastTokenValue().as_identifier;
-  auto ident_pos = LastTokenPosition();
-
-  auto expr = NewExpression::Create(class_name);
-  expr->set_position(ident_pos);
-
-  Expect(Token::kLBrace);
-
-  if (PeekAhead() != Token::kIdentifier && PeekAhead() != Token::kRBrace) {
-    ErrorExpected(Token::kIdentifier, Token::kRBrace);
-    Synchronize(kExpressionEndTokens);
-    return expr;
-  }
-
-  while (PeekAhead() == Token::kIdentifier) {
-    Expect(Token::kIdentifier);
-    auto field_name = LastTokenValue().as_identifier;
-    auto field_ident_pos = LastTokenPosition();
-
-    if (Expect(Token::kColon)) {
-      auto field_expr = ParseExpression(scope);
-      auto field_initializer = FieldInitializer::Create(field_name, std::move(field_expr));
-      field_initializer->set_position(field_ident_pos);
-      expr->add_field_initializer(std::move(field_initializer));
-    } else {
-      Synchronize(kExpressionEndTokens);
-    }
-
-    if (PeekAhead() != Token::kRBrace) {
-      if (!Expect(Token::kComma)) {
-        Synchronize(kExpressionEndTokens);
-      }
-    }
-  }
-
-  Expect(Token::kRBrace);
-
-  return expr;
 }
 
 
@@ -747,6 +720,70 @@ ExpressionPtr Parser::ParseConditionalExpression(Scope* scope) {
   auto expr = ConditionalExpression::Create(std::move(condition), std::move(then_expr), std::move(else_expr));
   expr->set_position(if_position);
   return expr;
+}
+
+
+ExpressionPtr Parser::ParseNewExpression(Scope* scope) {
+  Expect(Token::kNew);
+  Expect(Token::kIdentifier);
+  auto class_name = LastTokenValue().as_identifier;
+  auto ident_pos = LastTokenPosition();
+  auto initializer = ParseObjectInitializer(scope);
+
+  auto expr = NewExpression::Create(class_name, std::move(initializer));
+  expr->set_position(ident_pos);
+
+  return expr;
+}
+
+
+ObjectInitializerPtr Parser::ParseObjectInitializer(Scope* scope) {
+  Expect(Token::kLBrace);
+
+  if (PeekAhead() != Token::kIdentifier && PeekAhead() != Token::kRBrace) {
+    ErrorExpected(Token::kIdentifier, Token::kRBrace);
+    Synchronize(kExpressionEndTokens);
+    return nullptr;
+  }
+
+  auto initializer = ObjectInitializer::Create();
+
+  while (PeekAhead() == Token::kIdentifier) {
+    Expect(Token::kIdentifier);
+    auto field_name = LastTokenValue().as_identifier;
+    auto field_ident_pos = LastTokenPosition();
+
+    if (Expect(Token::kColon)) {
+      InitializerPtr value = nullptr;
+      if (PeekAhead() == Token::kLBrace) {
+        value = ParseObjectInitializer(scope);
+      } else {
+        value = ParseExpressionInitializer(scope);
+      }
+
+      auto entry = FieldEntry::Create(field_name, std::move(value));
+      entry->set_position(field_ident_pos);
+      initializer->add_entry(std::move(entry));
+    } else {
+      Synchronize(kExpressionEndTokens);
+    }
+
+    if (PeekAhead() != Token::kRBrace) {
+      if (!Expect(Token::kComma)) {
+        Synchronize(kExpressionEndTokens);
+      }
+    }
+  }
+
+  Expect(Token::kRBrace);
+  return initializer;
+}
+
+
+InitializerPtr Parser::ParseExpressionInitializer(Scope* scope) {
+  auto expr = ParseExpression(scope);
+  auto initializer = ExpressionInitializer::Create(std::move(expr));
+  return initializer;
 }
 
 

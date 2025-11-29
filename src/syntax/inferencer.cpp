@@ -64,6 +64,20 @@ void Inferencer::PrevisitClassDeclaration(ClassDeclaration* decl) {
     field_symbol->set_captured_index(member_info->index());
   }
 
+  for (auto& embedding : decl->embeddings()) {
+    auto embed_symbol = embedding->symbol();
+    xylo_contract(embed_symbol->type() != nullptr);
+
+    auto embed_nominal = embed_symbol->type()->As<NominalType>();
+    if (embed_nominal->HasEmbedding(class_type)) {
+      ReportError(embedding->position(), "cyclic embedding detected");
+      continue;
+    }
+
+    auto member_info = class_type->AddEmbedding(embedding->name(), embed_nominal);
+    xylo_contract(member_info != nullptr);
+  }
+
   // previsit inner decls
   for (auto& inner_decl : decl->declarations()) {
     switch (inner_decl->kind()) {
@@ -832,38 +846,16 @@ void Inferencer::VisitNewExpression(NewExpression* expr, InferenceContext* ctx) 
   auto symbol = expr->class_symbol();
   auto class_type = symbol->type();
   xylo_contract(class_type != nullptr);
-  auto nominal_type = class_type->As<NominalType>();
+  xylo_contract(class_type->kind() == Type::Kind::kNominal);
   expr->set_type(class_type);
 
-  // for checking all fields are initialized
-  Set<Identifier*> remain_fields;
-  for (auto& field : nominal_type->fields()) {
-    remain_fields.emplace(field->name());
-  }
+  VariableContext var_ctx{
+    .position = expr->position(),
+    .name = expr->class_name(),
+    .type = class_type,
+  };
 
-  InferenceContext local_ctx(*ctx);
-  local_ctx.needs_value = true;
-
-  // initializers
-  for (auto& init : expr->field_initializers()) {
-    VisitExpression(init->expr(), &local_ctx);
-    xylo_contract(init->expr()->type() != nullptr);
-
-    auto field_info = nominal_type->GetMember(init->field_name());
-    if (field_info == nullptr) {
-      ReportError(init->position(), "unknown field '" + init->field_name()->str().cpp_str() + "'");
-      continue;
-    }
-    if (!init->expr()->type()->ConstrainSubtypeOf(field_info->type())) {
-      ReportError(init->position(), "field '" + init->field_name()->str().cpp_str() + "' has incompatible type");
-    }
-
-    remain_fields.erase(init->field_name());
-  }
-
-  for (auto& field_name : remain_fields) {
-    ReportError(expr->position(), "missing field '" + field_name->str().cpp_str() + "'");
-  }
+  VisitObjectInitializer(expr->initializer(), &var_ctx, ctx);
 }
 
 
@@ -935,6 +927,87 @@ void Inferencer::VisitBlockExpression(BlockExpression* expr, InferenceContext* c
       ReportError(last_stmt->position(), "block must end with an expression");
       expr->set_type(context_->error_type());
       return;
+  }
+}
+
+
+void Inferencer::VisitExpressionInitializer(ExpressionInitializer* init, VariableContext* vctx, InferenceContext* ctx) {
+  InferenceContext local_ctx(*ctx);
+  local_ctx.needs_value = true;
+
+  VisitExpression(init->expr(), &local_ctx);
+  xylo_contract(init->expr()->type() != nullptr);
+
+  if (!init->expr()->type()->ConstrainSubtypeOf(vctx->type)) {
+    ReportError(vctx->position, "field '" + vctx->name->str().cpp_str() + "' has incompatible type");
+  }
+}
+
+
+void Inferencer::VisitObjectInitializer(ObjectInitializer* init, VariableContext* vctx, InferenceContext* ctx) {
+  auto object_type = vctx->type->As<NominalType>();
+
+  // for checking all fields are initialized
+  Set<Identifier*> remain_fields;
+  for (auto& field : object_type->fields()) {
+    remain_fields.emplace(field->name());
+  }
+
+  // initializers
+  for (auto& entry : init->entries()) {
+    auto member_info = object_type->GetMember(entry->name());
+    if (member_info == nullptr) {
+      ReportError(entry->position(), "unknown field '" + entry->name()->str().cpp_str() + "'");
+      continue;
+    }
+
+    VisitFieldEntry(entry.get(), member_info, ctx);
+    remain_fields.erase(entry->name());
+  }
+
+  for (auto& field_name : remain_fields) {
+    ReportError(vctx->position, "missing field '" + field_name->str().cpp_str() + "'");
+  }
+}
+
+
+void Inferencer::VisitFieldEntry(FieldEntry* entry, MemberInfo* member_info, InferenceContext* ctx) {
+  switch (member_info->kind()) {
+    case MemberInfo::Kind::kField: {
+      if (entry->value()->kind() != Initializer::Kind::kExpression) {
+        ReportError(entry->position(), "field '" + entry->name()->str().cpp_str() + "' has incompatible type");
+        break;
+      }
+
+      VariableContext field_ctx{
+        .position = entry->position(),
+        .name = entry->name(),
+        .type = member_info->type(),
+      };
+
+      VisitExpressionInitializer(entry->value()->As<ExpressionInitializer>(), &field_ctx, ctx);
+      break;
+    }
+
+    case MemberInfo::Kind::kEmbedding: {
+      if (entry->value()->kind() != Initializer::Kind::kObject) {
+        ReportError(entry->position(), "field '" + entry->name()->str().cpp_str() + "' has incompatible type");
+        break;
+      }
+
+      VariableContext embed_ctx{
+        .position = entry->position(),
+        .name = entry->name(),
+        .type = member_info->type(),
+      };
+
+      VisitObjectInitializer(entry->value()->As<ObjectInitializer>(), &embed_ctx, ctx);
+      break;
+    }
+
+    case MemberInfo::Kind::kMethod:
+      ReportError(entry->position(), "method '" + entry->name()->str().cpp_str() + "' cannot be initialized");
+      break;
   }
 }
 

@@ -51,6 +51,10 @@ class Verifier : public DiagnosticReporter {
   void VisitProjectionExpression(ProjectionExpression* expr, FlowState* state);
   void VisitBlockExpression(BlockExpression* expr, FlowState* state);
 
+  void VisitExpressionInitializer(ExpressionInitializer* init, FlowState* state);
+  void VisitObjectInitializer(ObjectInitializer* init, FlowState* state);
+  void VisitFieldEntry(FieldEntry* entry, FlowState* state);
+
  protected:
   XyloContext* context_;
 };

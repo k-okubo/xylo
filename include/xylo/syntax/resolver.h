@@ -74,6 +74,7 @@ class Resolver : public DiagnosticReporter {
   void VisitDeclaration(Declaration* decl, ResolutionContext* ctx);
   void VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* ctx);
   void VisitClassField(ClassField* field, ResolutionContext* ctx);
+  void VisitEmbeddingClass(EmbeddingClass* embedding, ResolutionContext* ctx);
   void VisitFunctionDeclaration(FunctionDeclaration* decl, ResolutionContext* ctx);
 
   void VisitBlock(Block* block, ResolutionContext* ctx);
@@ -96,6 +97,10 @@ class Resolver : public DiagnosticReporter {
   void VisitNewExpression(NewExpression* expr, ResolutionContext* ctx);
   void VisitProjectionExpression(ProjectionExpression* expr, ResolutionContext* ctx);
   void VisitBlockExpression(BlockExpression* expr, ResolutionContext* ctx);
+
+  void VisitExpressionInitializer(ExpressionInitializer* initializer, ResolutionContext* ctx);
+  void VisitObjectInitializer(ObjectInitializer* initializer, ResolutionContext* ctx);
+  void VisitFieldEntry(FieldEntry* entry, ResolutionContext* ctx);
 
   void VisitTypeRepr(TypeRepr* type_repr, ResolutionContext* ctx);
   void VisitNamedTypeRepr(NamedTypeRepr* type_repr, ResolutionContext* ctx);

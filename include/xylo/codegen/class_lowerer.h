@@ -27,10 +27,12 @@ class ClassLowerer : public CodegenScope {
   XyloContext* xylo_context() const { return root()->xylo_context(); }
   llvm::LLVMContext& llvm_context() const { return root()->llvm_context(); }
 
-  int scope_depth() const override { return xylo_class()->symbol()->scope()->depth(); }
+  int scope_depth() const override { return xylo_class()->scope()->depth(); }
   llvm::StructType* scope_data_type() const override { return llvm_struct_; }
 
-  llvm::StructType* GetOrCreateStruct();
+  Symbol* class_symbol() const { return class_decl_->symbol(); }
+
+  llvm::StructType* GetOrCreate();
   llvm::Function* GetOrBuildMethod(Identifier* name, const Vector<Type*>& type_args);
 
  protected:

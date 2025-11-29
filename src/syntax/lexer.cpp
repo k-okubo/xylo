@@ -11,6 +11,7 @@ namespace xylo {
 
 
 static constexpr HStringView kKeyword_Class("class");
+static constexpr HStringView kKeyword_Embed("embed");
 static constexpr HStringView kKeyword_Def("def");
 static constexpr HStringView kKeyword_Fn("fn");
 static constexpr HStringView kKeyword_Return("return");
@@ -84,6 +85,12 @@ static Token CheckKeyword(const HStringView& ident_str) {
     case kKeyword_Class.hash():
       if (ident_str == kKeyword_Class) {
         return Token::kClass;
+      }
+      break;
+
+    case kKeyword_Embed.hash():
+      if (ident_str == kKeyword_Embed) {
+        return Token::kEmbed;
       }
       break;
 

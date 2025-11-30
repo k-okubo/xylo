@@ -320,6 +320,18 @@ TEST(OperatorTest, RightShift) {
 }
 
 
+TEST(OperatorTest, RightShiftNegative) {
+  auto source = R"(
+    def main() {
+      return -12 >> 2
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, -3);
+}
+
+
 TEST(OperatorTest, LogicalAndTrueTrue) {
   auto source = R"(
     def main() {
@@ -576,6 +588,370 @@ TEST(OperatorTest, GreaterThanEqualFloat2) {
   auto source = R"(
     def main() {
       return 7.5 >= 5.0 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, AddAssignInteger) {
+  auto source = R"(
+    def main() {
+      var a = 10
+      a += 5
+      return a == 15 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, SubtractAssignInteger) {
+  auto source = R"(
+    def main() {
+      var a = 10
+      a -= 5
+      return a == 5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, MultiplyAssignInteger) {
+  auto source = R"(
+    def main() {
+      var a = 10
+      a *= 5
+      return a == 50 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, DivideAssignInteger) {
+  auto source = R"(
+    def main() {
+      var a = 10
+      a /= 5
+      return a == 2 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, RemainderAssignInteger) {
+  auto source = R"(
+    def main() {
+      var a = 10
+      a %= 3
+      return a == 1 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, AddAssignFloat) {
+  auto source = R"(
+    def main() {
+      var a = 10.0
+      a += 2.5
+      return a == 12.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, SubtractAssignFloat) {
+  auto source = R"(
+    def main() {
+      var a = 10.0
+      a -= 2.5
+      return a == 7.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, MultiplyAssignFloat) {
+  auto source = R"(
+    def main() {
+      var a = 10.0
+      a *= 2.5
+      return a == 25.0 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, DivideAssignFloat) {
+  auto source = R"(
+    def main() {
+      var a = 10.0
+      a /= 2.5
+      return a == 4.0 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, RemainderAssignFloat) {
+  auto source = R"(
+    def main() {
+      var a = 7.5
+      a %= 3.0
+      return a == 1.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, AddAssignMixed1) {
+  auto source = R"(
+    def main() {
+      var a = 2.5
+      a += 10
+      return a == 12.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, AddAssignMixed2) {
+  auto source = R"(
+    def main() {
+      var a = 10
+      a += 2.5
+      return a == 12.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, SubtractAssignMixed1) {
+  auto source = R"(
+    def main() {
+      var a = 12.5
+      a -= 10
+      return a == 2.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, SubtractAssignMixed2) {
+  auto source = R"(
+    def main() {
+      var a = 10
+      a -= 2.5
+      return a == 7.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, MultiplyAssignMixed1) {
+  auto source = R"(
+    def main() {
+      var a = 2.5
+      a *= 4
+      return a == 10.0 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, MultiplyAssignMixed2) {
+  auto source = R"(
+    def main() {
+      var a = 4
+      a *= 2.5
+      return a == 10.0 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, DivideAssignMixed1) {
+  auto source = R"(
+    def main() {
+      var a = 10.0
+      a /= 4
+      return a == 2.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, DivideAssignMixed2) {
+  auto source = R"(
+    def main() {
+      var a = 10
+      a /= 4.0
+      return a == 2.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, RemainderAssignMixed1) {
+  auto source = R"(
+    def main() {
+      var a = 8.5
+      a %= 4
+      return a == 0.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, RemainderAssignMixed2) {
+  auto source = R"(
+    def main() {
+      var a = 8
+      a %= 4.5
+      return a == 3.5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, BitAndAssign) {
+  auto source = R"(
+    def main() {
+      var a = 6
+      a &= 3
+      return a == 2 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, BitOrAssign) {
+  auto source = R"(
+    def main() {
+      var a = 6
+      a |= 3
+      return a == 7 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, BitXorAssign) {
+  auto source = R"(
+    def main() {
+      var a = 6
+      a ^= 3
+      return a == 5 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, LeftShiftAssign) {
+  auto source = R"(
+    def main() {
+      var a = 3
+      a <<= 2
+      return a == 12 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, RightShiftAssign) {
+  auto source = R"(
+    def main() {
+      var a = 12
+      a >>= 2
+      return a == 3 ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(OperatorTest, RightShiftAssignNegative) {
+  auto source = R"(
+    def main() {
+      var a = -12
+      a >>= 2
+      return a == -3 ? 1 : 0
     }
   )";
 

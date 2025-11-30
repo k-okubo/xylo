@@ -593,8 +593,110 @@ llvm::Value* FunctionLowerer::BuildBinaryExpression(BinaryExpression* expr) {
         return builder_.CreateFCmpOGE(lhs_value, rhs_value);
       }
 
-    case Token::kAssign:
-      return builder_.CreateStore(ZonkAndAdjustType(rhs_value, rhs_xylo_type, lhs_xylo_type), lhs_value);
+    case Token::kAssign: {
+      rhs_value = ZonkAndAdjustType(rhs_value, rhs_xylo_type, lhs_xylo_type);
+      return builder_.CreateStore(rhs_value, lhs_value);
+    }
+
+    case Token::kAddAssign: {
+      llvm::Value* lhs_loaded = builder_.CreateLoad(ZonkAndConvert(lhs_xylo_type, true), lhs_value);
+      llvm::Value* result;
+      if (lhs_loaded->getType()->isIntegerTy()) {
+        result = builder_.CreateAdd(lhs_loaded, rhs_value);
+      } else {
+        rhs_value = to_float(rhs_value);
+        result = builder_.CreateFAdd(lhs_loaded, rhs_value);
+      }
+      builder_.CreateStore(result, lhs_value);
+      return result;
+    }
+
+    case Token::kSubAssign: {
+      llvm::Value* lhs_loaded = builder_.CreateLoad(ZonkAndConvert(lhs_xylo_type, true), lhs_value);
+      llvm::Value* result;
+      if (lhs_loaded->getType()->isIntegerTy()) {
+        result = builder_.CreateSub(lhs_loaded, rhs_value);
+      } else {
+        rhs_value = to_float(rhs_value);
+        result = builder_.CreateFSub(lhs_loaded, rhs_value);
+      }
+      builder_.CreateStore(result, lhs_value);
+      return result;
+    }
+
+    case Token::kMulAssign: {
+      llvm::Value* lhs_loaded = builder_.CreateLoad(ZonkAndConvert(lhs_xylo_type, true), lhs_value);
+      llvm::Value* result;
+      if (lhs_loaded->getType()->isIntegerTy()) {
+        result = builder_.CreateMul(lhs_loaded, rhs_value);
+      } else {
+        rhs_value = to_float(rhs_value);
+        result = builder_.CreateFMul(lhs_loaded, rhs_value);
+      }
+      builder_.CreateStore(result, lhs_value);
+      return result;
+    }
+
+    case Token::kDivAssign: {
+      llvm::Value* lhs_loaded = builder_.CreateLoad(ZonkAndConvert(lhs_xylo_type, true), lhs_value);
+      llvm::Value* result;
+      if (lhs_loaded->getType()->isIntegerTy()) {
+        result = builder_.CreateSDiv(lhs_loaded, rhs_value);
+      } else {
+        rhs_value = to_float(rhs_value);
+        result = builder_.CreateFDiv(lhs_loaded, rhs_value);
+      }
+      builder_.CreateStore(result, lhs_value);
+      return result;
+    }
+
+    case Token::kRemAssign: {
+      llvm::Value* lhs_loaded = builder_.CreateLoad(ZonkAndConvert(lhs_xylo_type, true), lhs_value);
+      llvm::Value* result;
+      if (lhs_loaded->getType()->isIntegerTy()) {
+        result = builder_.CreateSRem(lhs_loaded, rhs_value);
+      } else {
+        rhs_value = to_float(rhs_value);
+        result = builder_.CreateFRem(lhs_loaded, rhs_value);
+      }
+      builder_.CreateStore(result, lhs_value);
+      return result;
+    }
+
+    case Token::kAndAssign: {
+      llvm::Value* lhs_loaded = builder_.CreateLoad(ZonkAndConvert(lhs_xylo_type, true), lhs_value);
+      auto result = builder_.CreateAnd(lhs_loaded, rhs_value);
+      builder_.CreateStore(result, lhs_value);
+      return result;
+    }
+
+    case Token::kOrAssign: {
+      llvm::Value* lhs_loaded = builder_.CreateLoad(ZonkAndConvert(lhs_xylo_type, true), lhs_value);
+      auto result = builder_.CreateOr(lhs_loaded, rhs_value);
+      builder_.CreateStore(result, lhs_value);
+      return result;
+    }
+
+    case Token::kXorAssign: {
+      llvm::Value* lhs_loaded = builder_.CreateLoad(ZonkAndConvert(lhs_xylo_type, true), lhs_value);
+      auto result = builder_.CreateXor(lhs_loaded, rhs_value);
+      builder_.CreateStore(result, lhs_value);
+      return result;
+    }
+
+    case Token::kShlAssign: {
+      llvm::Value* lhs_loaded = builder_.CreateLoad(ZonkAndConvert(lhs_xylo_type, true), lhs_value);
+      auto result = builder_.CreateShl(lhs_loaded, rhs_value);
+      builder_.CreateStore(result, lhs_value);
+      return result;
+    }
+
+    case Token::kShrAssign: {
+      llvm::Value* lhs_loaded = builder_.CreateLoad(ZonkAndConvert(lhs_xylo_type, true), lhs_value);
+      auto result = builder_.CreateAShr(lhs_loaded, rhs_value);
+      builder_.CreateStore(result, lhs_value);
+      return result;
+    }
 
     default:
       xylo_unreachable();

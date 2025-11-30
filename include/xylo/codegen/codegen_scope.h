@@ -6,7 +6,6 @@
 #include <llvm/IR/Module.h>
 
 #include <memory>
-#include <string>
 #include <utility>
 
 #include "xylo/syntax/ast.h"
@@ -81,6 +80,14 @@ class CodegenScope {
   llvm::Function* GetOrBuildFunction(Symbol* symbol, const Vector<Type*>& type_args);
   SubstitutionPtr ExtendTypeEnv(FunctionDeclaration* func_decl, const Vector<Type*>& type_args);
 
+  struct SymStrHash {
+    size_t operator()(const std::pair<Symbol*, HString>& p) const {
+      size_t h1 = std::hash<Symbol*>()(p.first);
+      size_t h2 = HStringHash()(p.second);
+      return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+    }
+  };
+
  private:
   Kind kind_;
   ModuleLowerer* root_;
@@ -90,7 +97,7 @@ class CodegenScope {
 
   Map<Symbol*, ClassDeclaration*> class_decls_;
   Map<Symbol*, FunctionDeclaration*> func_decls_;
-  Map<std::pair<Symbol*, std::string>, FunctionLowerer*, PairHash> specialized_funcs_;
+  Map<std::pair<Symbol*, HString>, FunctionLowerer*, SymStrHash> specialized_funcs_;
 };
 
 

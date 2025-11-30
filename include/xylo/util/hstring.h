@@ -26,11 +26,11 @@ class HString {
     data_ = p;
     auto end = s + n;
     auto hash = kInitHash;
-    auto c = *s;
     while (s != end) {
+      auto c = *s;
       *(p++) = c;
       hash = advance_hash(hash, c);
-      c = *(++s);
+      ++s;
     }
     hash_ = hash;
   }
@@ -77,6 +77,36 @@ class HString {
     hash_ = advance_hash(hash_, c);
   }
 
+  constexpr HString& append(const charT* s, size_type n) {
+    if (data_ == nullptr) {
+      capacity_ = n > kInitCapacity ? n : kInitCapacity;
+      data_ = new charT[capacity_];
+
+    } else if (size_ + n > capacity_) {
+      auto new_capacity = std::bit_ceil(size_ + n);
+      auto new_data = new charT[new_capacity];
+      std::memcpy(new_data, data_, size_);
+
+      release_data();
+      capacity_ = new_capacity;
+      data_ = new_data;
+    }
+
+    auto p = data_ + size_;
+    auto end = s + n;
+    auto hash = hash_;
+    while (s != end) {
+      auto c = *s;
+      *(p++) = c;
+      hash = advance_hash(hash, c);
+      ++s;
+    }
+    size_ += n;
+    hash_ = hash;
+
+    return *this;
+  }
+
   friend constexpr bool operator==(const HString& lhs, const HString& rhs) noexcept {
     return lhs.hash_ == rhs.hash_ && lhs.size_ == rhs.size_ && std::memcmp(lhs.data_, rhs.data_, lhs.size_) == 0;
   }
@@ -87,6 +117,18 @@ class HString {
 
   friend std::ostream& operator<<(std::ostream& stream, const HString& string) {
     return stream.write(string.data_, string.size_);
+  }
+
+  HString& operator+=(const HString& rhs) {
+    return append(rhs.data_, rhs.size_);
+  }
+
+  HString& operator+=(const charT* rhs) {
+    return append(rhs, std::char_traits<charT>::length(rhs));
+  }
+
+  HString& operator+=(const std::string& rhs) {
+    return append(rhs.data(), rhs.size());
   }
 
   constexpr std::string cpp_str() const {
@@ -130,7 +172,7 @@ class HString {
 // clang-format on
 
 
-struct StringHash {
+struct HStringHash {
   size_t operator()(const HString& s) const { return s.hash(); }
 };
 

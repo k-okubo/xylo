@@ -11,34 +11,56 @@
 namespace xylo {
 
 
-static std::string TypeKey(const Type* type) {
+static void TypeKey(HString* out, const Type* type, XyloContext* context) {
   switch (type->kind()) {
-    case Type::Kind::kNominal:
-      return std::format("{}", static_cast<const void*>(type));
+    case Type::Kind::kNominal: {
+      if (type == context->unit_type()) {
+        *out += "U";
+      } else if (type == context->bool_type()) {
+        *out += "B";
+      } else if (type == context->int_type()) {
+        *out += "I";
+      } else if (type == context->float_type()) {
+        *out += "F";
+      } else if (type == context->string_type()) {
+        *out += "S";
+      } else {
+        auto nominal_type = type->As<NominalType>();
+        auto& name = nominal_type->name()->str();
+        *out += "N";
+        *out += std::to_string(name.size());
+        *out += name;
+      }
+      return;
+    }
 
     case Type::Kind::kFunction: {
       auto func_type = type->As<FunctionType>();
-      return std::format("F({},{})", TypeKey(func_type->params_type()), TypeKey(func_type->return_type()));
+      *out += "f";
+      TypeKey(out, func_type->params_type(), context);
+      TypeKey(out, func_type->return_type(), context);
+      return;
     }
 
     case Type::Kind::kTuple: {
       auto tuple_type = type->As<TupleType>();
-      std::string key;
-      key += "(";
+      *out += "t";
+      *out += std::to_string(tuple_type->elements().size());
       for (auto elem : tuple_type->elements()) {
-        key += TypeKey(elem) + ",";
+        TypeKey(out, elem, context);
       }
-      key += ")";
-      return key;
+      return;
     }
 
     case Type::Kind::kIntersection:
       xylo_contract(type->is_top_type());
-      return "T";
+      *out += "A";
+      return;
 
     case Type::Kind::kUnion:
       xylo_contract(type->is_bottom_type());
-      return "B";
+      *out += "N";
+      return;
 
     case Type::Kind::kError:
     case Type::Kind::kMemberReq:
@@ -52,10 +74,11 @@ static std::string TypeKey(const Type* type) {
 }
 
 
-static std::string TypeArgsKey(const Vector<Type*>& type_args) {
-  std::string key;
+static HString TypeArgsKey(const Vector<Type*>& type_args, XyloContext* context) {
+  HString key;
+  key += std::to_string(type_args.size());
   for (auto t : type_args) {
-    key += TypeKey(t) + "|";
+    TypeKey(&key, t, context);
   }
   return key;
 }
@@ -141,14 +164,14 @@ llvm::Function* CodegenScope::GetOrBuildFunction(Symbol* symbol, const Vector<Ty
   }
 
   // look up specialized function lowerer
-  auto key = std::make_pair(symbol, TypeArgsKey(type_args));
+  auto key = std::make_pair(symbol, TypeArgsKey(type_args, root()->xylo_context()));
   auto sfunc_it = specialized_funcs_.find(key);
   if (sfunc_it == specialized_funcs_.end()) {
     auto func_decl = decl_it->second;
     auto ext_env = ExtendTypeEnv(func_decl, type_args);
     auto func_lowerer = new FunctionLowerer(this, std::move(ext_env), func_decl->func());
     func_lowerer->set_func_name(symbol->name()->str().cpp_str());
-    auto [it, _] = specialized_funcs_.emplace(key, func_lowerer);
+    auto [it, _] = specialized_funcs_.emplace(std::move(key), func_lowerer);
     sfunc_it = it;
   }
 

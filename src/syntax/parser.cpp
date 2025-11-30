@@ -724,7 +724,7 @@ ExpressionPtr Parser::ParseConditionalExpression(Scope* scope) {
   }
 
   auto expr = ConditionalExpression::Create(std::move(condition), std::move(then_expr), std::move(else_expr));
-  expr->set_position(if_position);
+  expr->set_position(SourceRange(if_position, LastTokenPosition()));
   return expr;
 }
 

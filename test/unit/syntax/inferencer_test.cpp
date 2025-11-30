@@ -424,6 +424,27 @@ TEST(InferencerTest, CannotBindBranchWithoutExpression) {
 }
 
 
+TEST(InferencerTest, CannotBindBottomType) {
+  auto source = R"(
+    def main() {
+      let x = if (true) { return } else { return }
+    }
+  )";
+
+  XyloContext context;
+  Externals externals(&context);
+  auto file_ast = GetResolvedAST(&context, &externals, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "conditional expression has no value");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 15);
+}
+
+
 TEST(InferencerTest, ConstTypeFunction) {
   auto source = R"(
     def main() {

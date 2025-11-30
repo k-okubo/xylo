@@ -836,6 +836,12 @@ void Inferencer::VisitConditionalExpression(ConditionalExpression* expr, Inferen
   if (!else_type->ConstrainSubtypeOf(expr_type)) {
     ReportError(expr->position(), "incompatible types in conditional branches");
   }
+
+  // the expression needs to have a value
+  if (expr_type->lower_bound()->empty()) {
+    ReportError(expr->position(), "conditional expression has no value");
+    expr->set_type(context_->error_type());
+  }
 }
 
 

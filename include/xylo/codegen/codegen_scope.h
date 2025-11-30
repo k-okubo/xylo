@@ -13,7 +13,7 @@
 #include "xylo/syntax/substitution.h"
 #include "xylo/syntax/type.h"
 #include "xylo/util/map.h"
-#include "xylo/util/pair_hash.h"
+#include "xylo/util/string.h"
 
 namespace xylo {
 
@@ -66,6 +66,7 @@ class CodegenScope {
 
   void add_child(CodegenScopePtr&& child) { childs_.push_back(std::move(child)); }
 
+  virtual const String& mangled_name() const = 0;
   virtual int scope_depth() const = 0;
   virtual llvm::StructType* scope_data_type() const = 0;
 

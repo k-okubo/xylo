@@ -62,7 +62,7 @@ llvm::StructType* ClassLowerer::CreateStruct() {
     }
   }
 
-  auto name = nominal->name()->str().cpp_view();
+  auto name = llvm::StringRef(class_name().data(), class_name().size());
   return llvm::StructType::create(llvm_context(), type_converter.ToArrayRef(field_types), name);
 }
 

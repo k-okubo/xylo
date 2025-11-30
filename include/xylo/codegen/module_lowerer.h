@@ -28,6 +28,11 @@ class ModuleLowerer : public CodegenScope {
   llvm::StructType* closure_type();
   llvm::Function* xylo_malloc();
 
+  const String& mangled_name() const override {
+    static String name("XY");
+    return name;
+  }
+
   int scope_depth() const override { return 1; }
   llvm::StructType* scope_data_type() const override { return nullptr; }
 

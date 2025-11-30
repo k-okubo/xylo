@@ -21,7 +21,8 @@ llvm::Function* FunctionLowerer::GetOrBuild() {
 llvm::Function* FunctionLowerer::BuildPrototype() {
   auto func_type = llvm::dyn_cast<llvm::FunctionType>(ZonkAndConvert(xylo_func()->type(), false));
   xylo_contract(func_type != nullptr);
-  return llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, func_name(), llvm_module());
+  auto name = llvm::StringRef(func_name().data(), func_name().size());
+  return llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, name, llvm_module());
 }
 
 
@@ -361,7 +362,7 @@ llvm::Value* FunctionLowerer::BuildFunctionIdentifier(IdentifierExpression* expr
 llvm::Value* FunctionLowerer::BuildFunctionExpression(FunctionExpression* expr) {
   auto ext_env = std::make_unique<Substitution>(type_env());
   auto nested_lowerer = new FunctionLowerer(this, std::move(ext_env), expr);
-  nested_lowerer->set_func_name("__anon");
+  nested_lowerer->set_func_name(String("anon"));
   auto llvm_func = nested_lowerer->GetOrBuild();
 
   if (expr->is_closure()) {

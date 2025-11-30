@@ -16,6 +16,7 @@ class ClassLowerer : public CodegenScope {
   ClassLowerer(CodegenScope* parent, SubstitutionPtr&& type_env, ClassDeclaration* class_decl) :
       CodegenScope(Kind::kClass, parent, std::move(type_env)),
       class_decl_(class_decl),
+      class_name_(),
       llvm_struct_(nullptr),
       member_symbols_() {}
 
@@ -23,10 +24,13 @@ class ClassLowerer : public CodegenScope {
 
   ClassDeclaration* xylo_class() const { return class_decl_; }
   xylo::NominalType* xylo_nominal() const { return class_decl_->symbol()->type()->As<NominalType>(); }
+  const String& class_name() const { return class_name_; }
+  void set_class_name(String&& name) { class_name_ = std::move(name); }
 
   XyloContext* xylo_context() const { return root()->xylo_context(); }
   llvm::LLVMContext& llvm_context() const { return root()->llvm_context(); }
 
+  const String& mangled_name() const override { return class_name_; }
   int scope_depth() const override { return xylo_class()->scope()->depth(); }
   llvm::StructType* scope_data_type() const override { return llvm_struct_; }
 
@@ -41,6 +45,7 @@ class ClassLowerer : public CodegenScope {
 
  private:
   ClassDeclaration* class_decl_;
+  String class_name_;
   llvm::StructType* llvm_struct_;
 
   Map<Identifier*, Symbol*> member_symbols_;

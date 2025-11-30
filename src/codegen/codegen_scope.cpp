@@ -84,6 +84,23 @@ static HString TypeArgsKey(const Vector<Type*>& type_args, XyloContext* context)
 }
 
 
+static String ChildMangledName(CodegenScope* parent, Symbol* symbol, const HString& type_args_key) {
+  String mangled;
+
+  mangled += parent->mangled_name();
+  mangled += "__";
+  mangled += std::to_string(symbol->name()->str().size());
+  mangled += symbol->name()->str();
+
+  if (type_args_key.size() > 1) {
+    mangled += "_";
+    mangled += type_args_key;
+  }
+
+  return mangled;
+}
+
+
 void CodegenScope::RegisterDeclaration(Declaration* decl) {
   switch (decl->kind()) {
     case Declaration::Kind::kClass:
@@ -129,6 +146,7 @@ llvm::StructType* CodegenScope::GetOrCreateStruct(Symbol* symbol) {
       auto class_decl = decl_it->second;
       auto ext_env = std::make_unique<Substitution>(lowerer->type_env());
       class_lowerer = new ClassLowerer(lowerer, std::move(ext_env), class_decl);
+      class_lowerer->set_class_name(ChildMangledName(lowerer, symbol, HString()));
       root()->RegisterClassLowerer(class_type, class_lowerer);
       break;
     }
@@ -170,7 +188,7 @@ llvm::Function* CodegenScope::GetOrBuildFunction(Symbol* symbol, const Vector<Ty
     auto func_decl = decl_it->second;
     auto ext_env = ExtendTypeEnv(func_decl, type_args);
     auto func_lowerer = new FunctionLowerer(this, std::move(ext_env), func_decl->func());
-    func_lowerer->set_func_name(symbol->name()->str().cpp_str());
+    func_lowerer->set_func_name(ChildMangledName(this, symbol, key.second));
     auto [it, _] = specialized_funcs_.emplace(std::move(key), func_lowerer);
     sfunc_it = it;
   }

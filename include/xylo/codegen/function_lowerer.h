@@ -5,7 +5,6 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 
-#include <string>
 #include <utility>
 
 #include "xylo/codegen/class_lowerer.h"
@@ -35,8 +34,8 @@ class FunctionLowerer : public CodegenScope {
   ~FunctionLowerer() = default;
 
   FunctionExpression* xylo_func() const { return xylo_func_; }
-  const std::string& func_name() const { return func_name_; }
-  void set_func_name(const std::string& name) { func_name_ = name; }
+  const String& func_name() const { return func_name_; }
+  void set_func_name(String&& name) { func_name_ = std::move(name); }
 
   XyloContext* xylo_context() const { return root()->xylo_context(); }
   llvm::Module* llvm_module() const { return root()->llvm_module(); }
@@ -47,6 +46,7 @@ class FunctionLowerer : public CodegenScope {
   llvm::Function* xylo_malloc() const { return root()->xylo_malloc(); }
   llvm::Value* null_ptr() const { return llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(llvm_context())); }
 
+  const String& mangled_name() const override { return func_name_; }
   int scope_depth() const override { return xylo_func()->scope()->depth(); }
   llvm::StructType* scope_data_type() const override { return heap_frame_type(); }
 
@@ -116,7 +116,7 @@ class FunctionLowerer : public CodegenScope {
 
  private:
   FunctionExpression* xylo_func_;
-  std::string func_name_;
+  String func_name_;
   llvm::Function* llvm_func_;
 
   llvm::IRBuilder<> builder_;

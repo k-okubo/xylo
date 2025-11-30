@@ -734,8 +734,14 @@ ExpressionPtr Parser::ParseNewExpression(Scope* scope) {
   Expect(Token::kIdentifier);
   auto class_name = LastTokenValue().as_identifier;
   auto ident_pos = LastTokenPosition();
-  auto initializer = ParseObjectInitializer(scope);
 
+  if (PeekAhead() != Token::kLBrace) {
+    ErrorExpected(Token::kLBrace);
+    Synchronize(kExpressionEndTokens);
+    return NullExpression::Create();
+  }
+
+  auto initializer = ParseObjectInitializer(scope);
   auto expr = NewExpression::Create(class_name, std::move(initializer));
   expr->set_position(ident_pos);
 

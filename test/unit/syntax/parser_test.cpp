@@ -757,15 +757,11 @@ TEST(ParserTest, ParseExpression_New_WrongBrace) {
 
   parser.ParseExpression(scope.get());
   ASSERT_TRUE(parser.has_diagnostics());
-  ASSERT_EQ(parser.diagnostics().size(), 2);
+  EXPECT_EQ(parser.diagnostics().size(), 1);
 
   EXPECT_EQ(parser.diagnostics()[0].message, "expected '{', found '['");
   EXPECT_EQ(parser.diagnostics()[0].position.start.line, 1);
   EXPECT_EQ(parser.diagnostics()[0].position.start.column, 8);
-
-  EXPECT_EQ(parser.diagnostics()[1].message, "expected identifier or '}', found '['");
-  EXPECT_EQ(parser.diagnostics()[1].position.start.line, 1);
-  EXPECT_EQ(parser.diagnostics()[1].position.start.column, 8);
 }
 
 

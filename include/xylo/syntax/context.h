@@ -26,18 +26,18 @@ class XyloContext {
       int_symbol_(Symbol::Kind::kClass, &root_scope_, InternIdentifier("int")),
       string_symbol_(Symbol::Kind::kClass, &root_scope_, InternIdentifier("string")),
       bottom_type_(),
-      unit_type_(unit_symbol_.name()),
-      bool_type_(bool_symbol_.name()),
-      comparable_type_(comparable_symbol_.name()),
-      numeric_type_(numeric_symbol_.name()),
-      float_type_(float_symbol_.name()),
-      int_type_(int_symbol_.name()),
-      string_type_(string_symbol_.name()) {
+      unit_type_(NominalType::Category::kPrimitive, unit_symbol_.name()),
+      bool_type_(NominalType::Category::kPrimitive, bool_symbol_.name()),
+      comparable_type_(NominalType::Category::kConcept, comparable_symbol_.name()),
+      numeric_type_(NominalType::Category::kConcept, numeric_symbol_.name()),
+      float_type_(NominalType::Category::kPrimitive, float_symbol_.name()),
+      int_type_(NominalType::Category::kPrimitive, int_symbol_.name()),
+      string_type_(NominalType::Category::kPrimitive, string_symbol_.name()) {
     // pseudo inheritance relationships
-    numeric_type_.add_super(&comparable_type_);
-    float_type_.add_super(&numeric_type_);
-    int_type_.add_super(&float_type_);
-    string_type_.add_super(&comparable_type_);
+    numeric_type_.AddSuper(&comparable_type_);
+    float_type_.AddSuper(&numeric_type_);
+    int_type_.AddSuper(&float_type_);
+    string_type_.AddSuper(&comparable_type_);
 
     // set primitive symbol types
     unit_symbol_.set_type(&unit_type_);

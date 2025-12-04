@@ -15,6 +15,10 @@ void Verifier::VisitFileAST(FileAST* file_ast) {
 
 void Verifier::VisitDeclaration(Declaration* decl) {
   switch (decl->kind()) {
+    case Declaration::Kind::kInterface:
+      // Interfaces do not have bodies to visit.
+      break;
+
     case Declaration::Kind::kClass:
       VisitClassDeclaration(decl->As<ClassDeclaration>());
       break;

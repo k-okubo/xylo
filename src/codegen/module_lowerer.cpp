@@ -37,6 +37,21 @@ void ModuleLowerer::BuildEntryPoint(const llvm::Twine& name, Symbol* main_symbol
 }
 
 
+void ModuleLowerer::RegisterInterfaceLowerer(NominalType* type, InterfaceLowerer* lowerer) {
+  interface_lowerers_.emplace(type, lowerer);
+}
+
+
+InterfaceLowerer* ModuleLowerer::GetInterfaceLowerer(NominalType* type) {
+  auto it = interface_lowerers_.find(type);
+  if (it != interface_lowerers_.end()) {
+    return it->second;
+  } else {
+    return nullptr;
+  }
+}
+
+
 void ModuleLowerer::RegisterClassLowerer(NominalType* type, ClassLowerer* lowerer) {
   class_lowerers_.emplace(type, lowerer);
 }
@@ -58,14 +73,25 @@ llvm::IntegerType* ModuleLowerer::size_type() {
 }
 
 
-llvm::StructType* ModuleLowerer::closure_type() {
-  if (closure_type_ != nullptr) {
-    return closure_type_;
+llvm::StructType* ModuleLowerer::closure_ptr_type() {
+  if (closure_ptr_type_ != nullptr) {
+    return closure_ptr_type_;
   }
 
   auto ptr_type = llvm::PointerType::getUnqual(llvm_context());
-  closure_type_ = llvm::StructType::create(llvm_context(), {ptr_type, ptr_type}, "ClosurePointer");
-  return closure_type_;
+  closure_ptr_type_ = llvm::StructType::create(llvm_context(), {ptr_type, ptr_type}, "ClosurePointer");
+  return closure_ptr_type_;
+}
+
+
+llvm::StructType* ModuleLowerer::interface_ptr_type() {
+  if (interface_ptr_type_ != nullptr) {
+    return interface_ptr_type_;
+  }
+
+  auto ptr_type = llvm::PointerType::getUnqual(llvm_context());
+  interface_ptr_type_ = llvm::StructType::create(llvm_context(), {ptr_type, ptr_type}, "InterfacePointer");
+  return interface_ptr_type_;
 }
 
 

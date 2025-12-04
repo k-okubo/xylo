@@ -70,6 +70,7 @@ enum class Token {
   kArrow,
   kDoubleArrow,
 
+  kInterface,
   kClass,
   kEmbed,
   kDef,

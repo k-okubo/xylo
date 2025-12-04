@@ -9,6 +9,7 @@
 
 #include "xylo/codegen/class_lowerer.h"
 #include "xylo/codegen/codegen_scope.h"
+#include "xylo/codegen/interface_lowerer.h"
 #include "xylo/codegen/module_lowerer.h"
 #include "xylo/syntax/ast.h"
 #include "xylo/syntax/context.h"
@@ -42,7 +43,8 @@ class FunctionLowerer : public CodegenScope {
   llvm::LLVMContext& llvm_context() const { return root()->llvm_context(); }
 
   llvm::IntegerType* size_type() const { return root()->size_type(); }
-  llvm::StructType* closure_type() const { return root()->closure_type(); }
+  llvm::StructType* closure_ptr_type() const { return root()->closure_ptr_type(); }
+  llvm::StructType* interface_ptr_type() const { return root()->interface_ptr_type(); }
   llvm::Function* xylo_malloc() const { return root()->xylo_malloc(); }
   llvm::Value* null_ptr() const { return llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(llvm_context())); }
 
@@ -79,6 +81,8 @@ class FunctionLowerer : public CodegenScope {
   llvm::Value* BuildConditionalExpression(ConditionalExpression* expr);
   llvm::Value* BuildNewExpression(NewExpression* expr);
   llvm::Value* BuildProjectionExpression(ProjectionExpression* expr, llvm::Value** out_closure_env);
+  llvm::Value* BuildClassProjection(ProjectionExpression* expr, NominalType* type, llvm::Value** out_closure_env);
+  llvm::Value* BuildInterfaceProjection(ProjectionExpression* expr, NominalType* type, llvm::Value** out_closure_env);
   llvm::Value* BuildBlockExpression(BlockExpression* expr);
 
   void BuildExpressionInitializer(ExpressionInitializer* init, xylo::Type* var_type, llvm::Value* ptr);
@@ -99,7 +103,13 @@ class FunctionLowerer : public CodegenScope {
   llvm::StructType* heap_frame_type() const { return heap_frame_type_; }
   void set_heap_frame_type(llvm::StructType* type) { heap_frame_type_ = type; }
 
-  llvm::StructType* GetStructType(xylo::NominalType* type) { return root()->GetClassLowerer(type)->GetOrCreate(); }
+  llvm::StructType* GetVTableStruct(xylo::NominalType* type) {
+    return root()->GetInterfaceLowerer(type)->GetOrCreateVTableStruct();
+  }
+
+  llvm::StructType* GetInstanceStruct(xylo::NominalType* type) {
+    return root()->GetClassLowerer(type)->GetOrCreateInstanceStruct();
+  }
 
   llvm::Function* GetOrBuildMethod(xylo::NominalType* type, Identifier* method_name,
                                    const Vector<xylo::Type*>& type_args) {
@@ -113,6 +123,7 @@ class FunctionLowerer : public CodegenScope {
   std::pair<llvm::Value*, llvm::StructType*> LoadClosureEnvironmentPtr(Symbol* symbol);
   std::pair<llvm::Value*, llvm::Type*> LoadClosureEnvironmentValuePtr(Symbol* symbol);
   llvm::Value* BuildClosurePointer(llvm::Value* function, llvm::Value* env_ptr);
+  llvm::Value* BuildInterfacePointer(llvm::Value* obj_ptr, llvm::Value* vtable_ptr);
 
  private:
   FunctionExpression* xylo_func_;

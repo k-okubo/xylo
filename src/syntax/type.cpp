@@ -9,7 +9,7 @@
 namespace xylo {
 
 
-MemberInfo* NominalType::GetMember(Identifier* member_name) const {
+MemberInfo* NominalType::GetMember(Identifier* member_name, bool include_super) const {
   {
     auto member = GetDeclaredMember(member_name);
     if (member != nullptr) {
@@ -25,10 +25,12 @@ MemberInfo* NominalType::GetMember(Identifier* member_name) const {
     }
   }
 
-  for (auto super : supers()) {
-    auto member = super->GetMember(member_name);
-    if (member != nullptr) {
-      return member;
+  if (include_super) {
+    for (auto super : supers()) {
+      auto member = super->GetMember(member_name);
+      if (member != nullptr) {
+        return member;
+      }
     }
   }
 
@@ -45,7 +47,7 @@ MemberInfo* NominalType::GetDeclaredMember(Identifier* member_name) const {
 }
 
 
-bool NominalType::GetMemberPath(Identifier* member_name, Vector<MemberInfo*>* out_path) const {
+bool NominalType::GetMemberPath(Identifier* member_name, Vector<NominalSlot*>* out_path) const {
   {
     auto member = GetDeclaredMember(member_name);
     if (member != nullptr) {
@@ -57,12 +59,35 @@ bool NominalType::GetMemberPath(Identifier* member_name, Vector<MemberInfo*>* ou
   for (auto embedding : embeddings_) {
     auto embed_type = embedding->type()->As<NominalType>();
     if (embed_type->GetMemberPath(member_name, out_path)) {
-      out_path->push_back(embedding);
+      out_path->push_back(embedding);  // reverse order
       return true;
     }
   }
 
-  // TODO: supers
+  for (auto& super : super_infos_) {
+    auto super_type = super->type();
+    if (super_type->GetMemberPath(member_name, out_path)) {
+      out_path->push_back(super.get());  // reverse order
+      return true;
+    }
+  }
+
+  return false;
+}
+
+
+bool NominalType::GetSuperPath(NominalType* super, Vector<NominalSlot*>* out_path) const {
+  if (this == super) {
+    return true;
+  }
+
+  for (auto& direct_super : super_infos_) {
+    auto super_type = direct_super->type();
+    if (super_type->GetSuperPath(super, out_path)) {
+      out_path->push_back(direct_super.get());  // reverse order
+      return true;
+    }
+  }
 
   return false;
 }
@@ -74,32 +99,31 @@ void NominalType::FindEmbededMembers(Identifier* member_name, Vector<MemberInfo*
     auto member = embed_type->GetDeclaredMember(member_name);
     if (member != nullptr) {
       out_members->push_back(member);
+    } else {
+      embed_type->FindEmbededMembers(member_name, out_members);
     }
-    embed_type->FindEmbededMembers(member_name, out_members);
   }
 }
 
 
-bool NominalType::HasEmbedding(NominalType* clazz) const {
-  if (this == clazz) {
-    return true;
-  }
-
-  for (auto embedding : embeddings_) {
-    if (embedding->type()->As<NominalType>()->HasEmbedding(clazz)) {
-      return true;
-    }
-  }
-
-#if 0
+void NominalType::FindSuperMembers(Identifier* member_name, Vector<MemberInfo*>* out_members) const {
   for (auto super : supers_) {
-    if (super->HasEmbedding(clazz)) {
-      return true;
+    auto member = super->GetDeclaredMember(member_name);
+    if (member != nullptr) {
+      out_members->push_back(member);
     }
+    super->FindSuperMembers(member_name, out_members);
   }
-#endif
+}
 
-  return false;
+
+void NominalType::FindSuperMethods(Vector<MemberInfo*>* out_members) const {
+  for (auto super : supers_) {
+    for (auto method : super->methods()) {
+      out_members->push_back(method);
+    }
+    super->FindSuperMethods(out_members);
+  }
 }
 
 
@@ -108,7 +132,8 @@ MemberInfo* NominalType::AddField(Identifier* field_name, Type* field_type) {
     return nullptr;
   }
 
-  int index = fields_.size();
+  // field and embedding share the same numbering system
+  int index = fields_.size() + embeddings_.size();
   auto field = new MemberInfo(this, MemberInfo::Kind::kField, index, field_name, field_type);
 
   fields_.push_back(field);
@@ -117,33 +142,47 @@ MemberInfo* NominalType::AddField(Identifier* field_name, Type* field_type) {
 }
 
 
+MemberInfo* NominalType::AddMethod(Identifier* method_name, Type* method_type) {
+  if (GetDeclaredMember(method_name) != nullptr) {
+    return nullptr;
+  }
+
+  // method and super share the same numbering system
+  int index = methods_.size() + supers_.size();
+  auto method = new MemberInfo(this, MemberInfo::Kind::kMethod, index, method_name, method_type);
+
+  methods_.push_back(method);
+  member_map_.emplace(method_name, MemberInfoPtr(method));
+  return method;
+}
+
+
 MemberInfo* NominalType::AddEmbedding(Identifier* field_name, NominalType* clazz) {
   if (GetDeclaredMember(field_name) != nullptr) {
     return nullptr;
   }
 
-  // embedding is also a field
-  int index = fields_.size();
+  // field and embedding share the same numbering system
+  int index = fields_.size() + embeddings_.size();
   auto embedding = new MemberInfo(this, MemberInfo::Kind::kEmbedding, index, field_name, clazz);
 
-  fields_.push_back(embedding);
   embeddings_.push_back(embedding);
   member_map_.emplace(field_name, MemberInfoPtr(embedding));
   return embedding;
 }
 
 
-MemberInfo* NominalType::AddMethod(Identifier* method_name, Type* method_type) {
-  if (GetDeclaredMember(method_name) != nullptr) {
-    return nullptr;
-  }
+bool NominalType::AddSuper(NominalType* clazz) {
+  // Due to index numbering requirements, supers must be added before methods
+  xylo_contract(methods_.empty());
 
-  int index = methods_.size();
-  auto method = new MemberInfo(this, MemberInfo::Kind::kMethod, index, method_name, method_type);
+  // method and super share the same numbering system
+  int index = supers_.size();
+  auto super_info = new SuperInfo(this, index, clazz);
 
-  methods_.push_back(method);
-  member_map_.emplace(method_name, MemberInfoPtr(method));
-  return method;
+  supers_.push_back(clazz);
+  super_infos_.push_back(SuperInfoPtr(super_info));
+  return true;
 }
 
 
@@ -308,7 +347,7 @@ static bool ApplySubtypingRules(S src, D dst, const P& proc) {
     auto src_nominal = src->template As<NominalType>();
     auto dst_memreq = dst->template As<MemberRequirement>();
     if (dst_memreq->is_resolved()) {
-      return src_nominal->IsSubtypeOf(dst_memreq->resolved()->owner());
+      return src_nominal->IsSubtypeOf(dst_memreq->origin_owner());
     }
     return proc.onRecToMemberReq(src_nominal, dst_memreq);
   }
@@ -318,7 +357,7 @@ static bool ApplySubtypingRules(S src, D dst, const P& proc) {
     if (dst->kind() == Type::Kind::kNominal) {
       auto src_memreq = src->template As<MemberRequirement>();
       if (src_memreq->is_resolved()) {
-        return src_memreq->resolved()->owner()->IsSubtypeOf(dst);
+        return src_memreq->origin_owner()->IsSubtypeOf(dst);
       }
     }
     return false;
@@ -611,6 +650,38 @@ bool Type::ConstrainSameAs(Type* other) {
 }
 
 
+static Type* FindOriginOwner(NominalType* owner, Identifier* member_name, MemberInfo::Kind kind, TypeSink* allocated) {
+  Vector<MemberInfo*> super_members;
+  owner->FindSuperMembers(member_name, &super_members);
+
+  auto origin_owners = std::make_unique<UnionType>();
+  origin_owners->add_element(owner);
+
+  for (auto super_member : super_members) {
+    if (super_member->kind() == kind) {
+      origin_owners->add_element(super_member->owner());
+    }
+  }
+
+  origin_owners->ShrinkToUpper();
+
+  switch (origin_owners->elements().size()) {
+    case 0:
+      xylo_unreachable();
+      break;
+
+    case 1:
+      return origin_owners->elements()[0];
+
+    default: {
+      auto result = origin_owners.get();
+      allocated->adopt_type(std::move(origin_owners));
+      return result;
+    }
+  }
+}
+
+
 bool MemberRequirement::CanAccept(const NominalType* nominal, TypePairSet* visited) const {
   auto member = nominal->GetMember(this->name());
   if (member == nullptr) {
@@ -673,7 +744,19 @@ bool MemberRequirement::Accept(NominalType* nominal, TypePairSet* visited) {
 
   this->set_resolved(member);
   this->set_instantiated_vars(std::move(instantiated_vars));
-  this->type()->adopt_types(&allocated);
+  this->adopt_types(&allocated);
+
+  auto owner = member->owner();
+  if (!nominal->IsSubtypeOf(owner)) {
+    // 'member' is embeded
+    owner = nominal;
+  }
+
+  if (member->kind() == MemberInfo::Kind::kMethod) {
+    set_origin_owner(FindOriginOwner(owner, this->name(), MemberInfo::Kind::kMethod, this));
+  } else {
+    set_origin_owner(owner);
+  }
 
   return true;
 }
@@ -1835,11 +1918,11 @@ std::string TypePrinter::Print(const MemberRequirement* type, bool paren, Status
   std::string str = "";
 
   if (!options_.verbose && type->is_resolved()) {
-    return Print(type->resolved()->owner(), paren, status);
+    return Print(type->origin_owner(), paren, status);
   }
 
   if (type->is_resolved()) {
-    str += Print(type->resolved()->owner(), false, status);
+    str += Print(type->origin_owner(), false, status);
     str += ".";
   }
   str += type->name()->str().cpp_str();
@@ -2145,7 +2228,7 @@ std::string TypePrinter::PrintConstraints(Status* status) const {
         if (ub->kind() == Type::Kind::kMemberReq) {
           auto memreq = ub->template As<MemberRequirement>();
           if (memreq->is_resolved()) {
-            ub = memreq->resolved()->owner();
+            ub = memreq->origin_owner();
           }
         }
         if (ub == var) {

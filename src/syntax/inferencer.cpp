@@ -10,13 +10,22 @@ namespace xylo {
 
 void Inferencer::VisitFileAST(FileAST* file_ast) {
   for (auto& decl : file_ast->declarations()) {
-    if (decl->kind() == Declaration::Kind::kClass) {
-      PreVisitClassRegistration(decl->As<ClassDeclaration>());
+    switch (decl->kind()) {
+      case Declaration::Kind::kInterface:
+        PreVisitInterfaceCreation(decl->As<InterfaceDeclaration>());
+        break;
+
+      case Declaration::Kind::kClass:
+        PreVisitClassCreation(decl->As<ClassDeclaration>());
+        break;
+
+      default:
+        break;
     }
   }
 
   for (auto& decl : file_ast->declarations()) {
-    PrevisitDeclaration(decl.get());
+    PreVisitDeclaration(decl.get());
   }
 
   for (auto& decl : file_ast->declarations()) {
@@ -25,58 +34,105 @@ void Inferencer::VisitFileAST(FileAST* file_ast) {
 }
 
 
-void Inferencer::PrevisitDeclaration(Declaration* decl) {
+void Inferencer::PreVisitInterfaceCreation(InterfaceDeclaration* decl) {
+  xylo_contract(decl->symbol()->type() == nullptr);
+
+  auto interface_type = new NominalType(NominalType::Category::kInterface, decl->symbol()->name());
+  decl->symbol()->set_type(interface_type);
+  context_->RegisterClass(decl->symbol(), TypePtr(interface_type));
+
+  auto resolver = [=, this]() {
+    PreVisitInterfaceDeclaration(decl);
+  };
+  RegisterEntityState(decl->symbol(), EntityState(resolver));
+}
+
+
+void Inferencer::PreVisitClassCreation(ClassDeclaration* decl) {
+  xylo_contract(decl->symbol()->type() == nullptr);
+
+  auto class_type = new NominalType(NominalType::Category::kClass, decl->symbol()->name());
+  decl->symbol()->set_type(class_type);
+  context_->RegisterClass(decl->symbol(), TypePtr(class_type));
+
+  auto resolver = [=, this]() {
+    PreVisitClassDeclaration(decl);
+  };
+  RegisterEntityState(decl->symbol(), EntityState(resolver));
+}
+
+
+void Inferencer::PreVisitDeclaration(Declaration* decl) {
   switch (decl->kind()) {
+    case Declaration::Kind::kInterface:
+      PreVisitInterfaceDeclaration(decl->As<InterfaceDeclaration>());
+      break;
+
     case Declaration::Kind::kClass:
-      PrevisitClassDeclaration(decl->As<ClassDeclaration>());
+      PreVisitClassDeclaration(decl->As<ClassDeclaration>());
       break;
 
     case Declaration::Kind::kFunction:
-      PrevisitFunctionDeclaration(decl->As<FunctionDeclaration>());
+      PreVisitFunctionDeclaration(decl->As<FunctionDeclaration>());
       break;
   }
 }
 
 
-void Inferencer::PreVisitClassRegistration(ClassDeclaration* decl) {
-  xylo_contract(decl->symbol()->type() == nullptr);
+void Inferencer::PreVisitInterfaceDeclaration(InterfaceDeclaration* decl) {
+  {
+    auto& state = GetEntityState(decl->symbol());
+    if (state.done || state.in_progress) {
+      return;
+    }
+    state.in_progress = true;
+  }
 
-  auto class_type = new NominalType(decl->symbol()->name());
-  decl->symbol()->set_type(class_type);
-  context_->RegisterClass(decl->symbol(), TypePtr(class_type));
+  ClassDeclareInfo declare_info{
+    .class_decl = decl,
+    .method_decls = Map<Identifier*, FunctionDeclaration*>(),
+  };
+
+  xylo_contract(decl->symbol()->type() != nullptr);
+  auto interface_type = decl->symbol()->type()->As<NominalType>();
+
+  RegisterSupertypes(interface_type, decl->supers());
+
+  for (auto& method_decl : decl->methods()) {
+    RegisterMethod(interface_type, method_decl.get());
+    declare_info.method_decls.emplace(method_decl->symbol()->name(), method_decl.get());
+  }
+
+  CheckOverrides(interface_type, declare_info, false);
+
+  {
+    auto& state = GetEntityState(decl->symbol());
+    state.in_progress = false;
+    state.done = true;
+  }
 }
 
 
-void Inferencer::PrevisitClassDeclaration(ClassDeclaration* decl) {
+void Inferencer::PreVisitClassDeclaration(ClassDeclaration* decl) {
+  {
+    auto& state = GetEntityState(decl->symbol());
+    if (state.done || state.in_progress) {
+      return;
+    }
+    state.in_progress = true;
+  }
+
+  ClassDeclareInfo declare_info{
+    .class_decl = decl,
+    .method_decls = Map<Identifier*, FunctionDeclaration*>(),
+  };
+
   xylo_contract(decl->symbol()->type() != nullptr);
   auto class_type = decl->symbol()->type()->As<NominalType>();
 
-  // set fields
-  for (auto& field : decl->fields()) {
-    auto field_symbol = field->symbol();
-    xylo_contract(field_symbol->type() == nullptr);
-
-    auto field_type = ConvertDeclarableTypeRepr(field->type_repr(), class_type);
-    field_symbol->set_type(field_type);
-
-    auto member_info = class_type->AddField(field_symbol->name(), field_type);
-    xylo_contract(member_info != nullptr);
-    field_symbol->set_captured_index(member_info->index());
-  }
-
-  for (auto& embedding : decl->embeddings()) {
-    auto embed_symbol = embedding->symbol();
-    xylo_contract(embed_symbol->type() != nullptr);
-
-    auto embed_nominal = embed_symbol->type()->As<NominalType>();
-    if (embed_nominal->HasEmbedding(class_type)) {
-      ReportError(embedding->position(), "cyclic embedding detected");
-      continue;
-    }
-
-    auto member_info = class_type->AddEmbedding(embedding->name(), embed_nominal);
-    xylo_contract(member_info != nullptr);
-  }
+  RegisterSupertypes(class_type, decl->supers());
+  RegisterEmbeddings(class_type, decl->embeddings());
+  RegisterFields(class_type, decl->fields());
 
   // previsit inner decls
   for (auto& inner_decl : decl->declarations()) {
@@ -85,35 +141,32 @@ void Inferencer::PrevisitClassDeclaration(ClassDeclaration* decl) {
         xylo_unreachable();
         break;
 
+      case Declaration::Kind::kInterface:
+        xylo_unreachable();
+        break;
+
       case Declaration::Kind::kFunction: {
         auto method_decl = inner_decl->As<FunctionDeclaration>();
-        auto method_symbol = method_decl->symbol();
-        xylo_contract(method_symbol->type() == nullptr);
-
-        auto member_info = class_type->AddMethod(method_symbol->name(), nullptr);
-        xylo_contract(member_info != nullptr);
-
-        // method type resolver
-        auto resolver = [=, this]() {
-          VisitFunctionDeclaration(method_decl);
-        };
-        auto on_update_type = [=]() {
-          xylo_contract(method_symbol->type() != nullptr);
-          member_info->set_type(method_symbol->type());
-        };
-
-        EntityState state(resolver);
-        state.on_update_type.push_back(on_update_type);
-        RegisterEntityState(method_decl->symbol(), std::move(state));
-
-        member_info->set_type_resolver(resolver);
+        RegisterMethod(class_type, method_decl);
+        declare_info.method_decls.emplace(method_decl->symbol()->name(), method_decl);
+        break;
       }
     }
+  }
+
+  CheckOverrides(class_type, declare_info, true);
+
+  {
+    auto& state = GetEntityState(decl->symbol());
+    state.in_progress = false;
+    state.done = true;
   }
 }
 
 
-void Inferencer::PrevisitFunctionDeclaration(FunctionDeclaration* decl) {
+void Inferencer::PreVisitFunctionDeclaration(FunctionDeclaration* decl) {
+  VisitFunctionPrototype(decl->func(), false);
+
   auto resolver = [=, this]() {
     VisitFunctionDeclaration(decl);
   };
@@ -121,8 +174,187 @@ void Inferencer::PrevisitFunctionDeclaration(FunctionDeclaration* decl) {
 }
 
 
+void Inferencer::RegisterSupertypes(NominalType* nominal_type, const Vector<SuperClassPtr>& super_classes) {
+  for (auto& super : super_classes) {
+    auto super_symbol = super->symbol();
+    xylo_contract(super_symbol->type() != nullptr);
+
+    auto& state = GetEntityState(super_symbol);
+    if (!state.done) {
+      if (state.in_progress) {
+        ReportError(super->position(), "cyclic inheritance detected");
+        continue;
+      } else {
+        state.resolve();
+      }
+    }
+
+    auto super_nominal = super_symbol->type()->As<NominalType>();
+    xylo_check(nominal_type->AddSuper(super_nominal));
+  }
+}
+
+
+void Inferencer::RegisterEmbeddings(NominalType* nominal_type, const Vector<EmbeddingClassPtr>& embeddings) {
+  for (auto& embedding : embeddings) {
+    auto embed_symbol = embedding->symbol();
+    xylo_contract(embed_symbol->type() != nullptr);
+
+    auto& state = GetEntityState(embed_symbol);
+    if (!state.done) {
+      if (state.in_progress) {
+        ReportError(embedding->position(), "cyclic embedding detected");
+        continue;
+      } else {
+        state.resolve();
+      }
+    }
+
+    auto embed_nominal = embed_symbol->type()->As<NominalType>();
+    xylo_check(nominal_type->AddEmbedding(embedding->name(), embed_nominal));
+  }
+}
+
+
+void Inferencer::RegisterFields(NominalType* nominal_type, const Vector<ClassFieldPtr>& fields) {
+  for (auto& field : fields) {
+    auto field_symbol = field->symbol();
+    xylo_contract(field_symbol->type() == nullptr);
+
+    auto field_type = ConvertDeclarableTypeRepr(field->type_repr(), nominal_type);
+    field_symbol->set_type(field_type);
+
+    auto member_info = nominal_type->AddField(field_symbol->name(), field_type);
+    xylo_contract(member_info != nullptr);
+    field_symbol->set_captured_index(member_info->index());
+  }
+}
+
+
+void Inferencer::RegisterMethod(NominalType* nominal_type, FunctionDeclaration* method) {
+  auto method_symbol = method->symbol();
+  auto method_func = method->func();
+  xylo_contract(method_symbol->type() == nullptr);
+  xylo_contract(method_func->type() == nullptr);
+
+  // get function type
+  auto func_expr = method->func();
+  VisitFunctionPrototype(func_expr, false);
+  auto func_type = func_expr->type();
+  xylo_contract(func_type != nullptr);
+
+  // for incomplete types, resolve the type later
+  if (!func_type->IsGroundType()) {
+    func_type = nullptr;
+  }
+
+  // register method
+  auto member_info = nominal_type->AddMethod(method_symbol->name(), func_type);
+  xylo_contract(member_info != nullptr);
+
+  if (method_func->body() == nullptr) {
+    RegisterMethodAbstract(member_info, method);
+  } else {
+    RegisterMethodConcrete(member_info, method);
+  }
+}
+
+
+void Inferencer::RegisterMethodAbstract(MemberInfo* member_info, FunctionDeclaration* method) {
+  if (member_info->type() == nullptr) {
+    ReportError(method->symbol()->position(), "interface methods must have explicit type annotations");
+    member_info->set_type(context_->error_type());
+  }
+
+  method->symbol()->set_type(member_info->type());
+}
+
+
+void Inferencer::RegisterMethodConcrete(MemberInfo* member_info, FunctionDeclaration* method) {
+  auto resolver = [=, this]() {
+    VisitFunctionDeclaration(method);
+  };
+  auto on_update_type = [=]() {
+    xylo_contract(method->symbol()->type() != nullptr);
+    member_info->set_type(method->symbol()->type());
+  };
+
+  EntityState state(resolver);
+  state.on_update_type.push_back(on_update_type);
+  RegisterEntityState(method->symbol(), std::move(state));
+
+  member_info->set_type_resolver(resolver);
+}
+
+
+void Inferencer::CheckOverrides(NominalType* nominal_type, const ClassDeclareInfo& declare_info, bool is_class) {
+  auto position = [&](Identifier* method_name) -> const SourceRange& {
+    auto it = declare_info.method_decls.find(method_name);
+    if (it != declare_info.method_decls.end()) {
+      return it->second->symbol()->position();
+    } else {
+      return declare_info.class_decl->symbol()->position();
+    }
+  };
+
+  auto report_missing_impl = [=, this](Identifier* method_name, Identifier* base_owner_name) {
+    auto method = method_name->str().cpp_str();
+    auto base = base_owner_name->str().cpp_str();
+    auto& pos = position(method_name);
+    ReportError(pos, "method '" + method + "' from interface '" + base + "' is not implemented");
+  };
+
+  auto report_incomplete_type = [=, this](Identifier* method_name, Identifier* base_owner_name) {
+    auto method = method_name->str().cpp_str();
+    auto base = base_owner_name->str().cpp_str();
+    auto& pos = position(method_name);
+    ReportError(pos, "method '" + method + "' implementing '" + base + "' must have an explicit type annotation");
+  };
+
+  auto report_incompatible_override = [=, this](Identifier* method_name, Identifier* base_owner_name) {
+    auto method = method_name->str().cpp_str();
+    auto base = base_owner_name->str().cpp_str();
+    auto& pos = position(method_name);
+    ReportError(pos, "method '" + method + "' must match signature in '" + base + "'");
+  };
+
+  Vector<MemberInfo*> super_methods;
+  nominal_type->FindSuperMethods(&super_methods);
+
+  // check each method of super types
+  for (auto super_method : super_methods) {
+    auto method_name = super_method->name();
+    auto base_owner_name = super_method->owner()->name();
+    auto member = nominal_type->GetMember(method_name, false);
+
+    // method exists?
+    if (member == nullptr || member->kind() != MemberInfo::Kind::kMethod) {
+      if (is_class) {
+        report_missing_impl(method_name, base_owner_name);
+      }
+      continue;
+    }
+
+    // type annotation exists?
+    if (member->type() == nullptr) {
+      report_incomplete_type(method_name, base_owner_name);
+      continue;
+    }
+
+    // compatible type?
+    if (!member->type()->ConstrainSameAs(super_method->type())) {
+      report_incompatible_override(method_name, base_owner_name);
+    }
+  }
+}
+
+
 void Inferencer::VisitDeclaration(Declaration* decl) {
   switch (decl->kind()) {
+    case Declaration::Kind::kInterface:
+      // Interfaces do not have bodies to visit.
+      break;
+
     case Declaration::Kind::kClass:
       VisitClassDeclaration(decl->As<ClassDeclaration>());
       break;
@@ -137,14 +369,14 @@ void Inferencer::VisitDeclaration(Declaration* decl) {
 void Inferencer::VisitClassDeclaration(ClassDeclaration* decl) {
   for (auto& inner_decl : decl->declarations()) {
     if (inner_decl->kind() == Declaration::Kind::kClass) {
-      PreVisitClassRegistration(inner_decl->As<ClassDeclaration>());
+      PreVisitClassCreation(inner_decl->As<ClassDeclaration>());
     }
   }
 
   for (auto& inner_decl : decl->declarations()) {
     // methods is already previsited in PrevisitClassDeclaration
     if (inner_decl->kind() == Declaration::Kind::kClass) {
-      PrevisitDeclaration(inner_decl.get());
+      PreVisitDeclaration(inner_decl.get());
     }
   }
 
@@ -181,7 +413,7 @@ void Inferencer::VisitFunctionDeclaration(FunctionDeclaration* decl) {
 
   state.in_progress = true;
 
-  VisitFunctionPrototype(decl->func(), false);
+  // VisitFunctionPrototype was already called
   VisitFunctionBody(decl->func());
 
   // close over metavariables
@@ -198,6 +430,7 @@ void Inferencer::VisitFunctionDeclaration(FunctionDeclaration* decl) {
   {
     auto& state = GetEntityState(decl->symbol());
     state.in_progress = false;
+    state.done = true;
 
     // notify completion
     for (auto& callback : state.on_update_type) {
@@ -210,12 +443,12 @@ void Inferencer::VisitFunctionDeclaration(FunctionDeclaration* decl) {
 void Inferencer::VisitBlock(Block* block, InferenceContext* ctx) {
   for (auto& decl : block->declarations()) {
     if (decl->kind() == Declaration::Kind::kClass) {
-      PreVisitClassRegistration(decl->As<ClassDeclaration>());
+      PreVisitClassCreation(decl->As<ClassDeclaration>());
     }
   }
 
   for (auto& decl : block->declarations()) {
-    PrevisitDeclaration(decl.get());
+    PreVisitDeclaration(decl.get());
   }
 
   for (auto& decl : block->declarations()) {
@@ -1013,6 +1246,10 @@ void Inferencer::VisitFieldEntry(FieldEntry* entry, MemberInfo* member_info, Inf
 
     case MemberInfo::Kind::kMethod:
       ReportError(entry->position(), "method '" + entry->name()->str().cpp_str() + "' cannot be initialized");
+      break;
+
+    case MemberInfo::Kind::kSuper:
+      xylo_unreachable();
       break;
   }
 }

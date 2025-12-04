@@ -23,6 +23,7 @@ Type* Substitution::Apply(Type* type, TypeSink* out_allocated) const {
         auto new_memreq = new MemberRequirement(memreq->name(), sbsted_type);
         new_memreq->SetMutable(memreq->is_mutable());
         new_memreq->set_resolved(memreq->resolved());
+        new_memreq->set_origin_owner(memreq->origin_owner());
         new_memreq->set_on_error(memreq->on_error());
         out_allocated->adopt_type(TypePtr(new_memreq));
         return new_memreq;

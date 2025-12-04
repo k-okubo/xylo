@@ -39,19 +39,37 @@ class Inferencer : public DiagnosticReporter {
   struct EntityState {
     std::function<void()> resolve;
     bool in_progress;
+    bool done;
     Vector<std::function<void()>> on_update_type;
 
     template <typename T>
     explicit EntityState(T&& resolver) :
         resolve(std::forward<T>(resolver)),
         in_progress(false),
+        done(false),
         on_update_type() {}
   };
 
-  void PrevisitDeclaration(Declaration* decl);
-  void PreVisitClassRegistration(ClassDeclaration* decl);
-  void PrevisitClassDeclaration(ClassDeclaration* decl);
-  void PrevisitFunctionDeclaration(FunctionDeclaration* decl);
+  void PreVisitInterfaceCreation(InterfaceDeclaration* decl);
+  void PreVisitClassCreation(ClassDeclaration* decl);
+
+  void PreVisitDeclaration(Declaration* decl);
+  void PreVisitInterfaceDeclaration(InterfaceDeclaration* decl);
+  void PreVisitClassDeclaration(ClassDeclaration* decl);
+  void PreVisitFunctionDeclaration(FunctionDeclaration* decl);
+
+  void RegisterSupertypes(NominalType* nominal_type, const Vector<SuperClassPtr>& super_classes);
+  void RegisterEmbeddings(NominalType* nominal_type, const Vector<EmbeddingClassPtr>& embeddings);
+  void RegisterFields(NominalType* nominal_type, const Vector<ClassFieldPtr>& fields);
+  void RegisterMethod(NominalType* nominal_type, FunctionDeclaration* method);
+  void RegisterMethodAbstract(MemberInfo* member_info, FunctionDeclaration* method);
+  void RegisterMethodConcrete(MemberInfo* member_info, FunctionDeclaration* method);
+
+  struct ClassDeclareInfo {
+    Declaration* class_decl;
+    Map<Identifier*, FunctionDeclaration*> method_decls;
+  };
+  void CheckOverrides(NominalType* nominal_type, const ClassDeclareInfo& declare_info, bool is_class);
 
   void VisitDeclaration(Declaration* decl);
   void VisitClassDeclaration(ClassDeclaration* decl);

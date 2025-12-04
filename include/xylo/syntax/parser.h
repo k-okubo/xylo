@@ -31,12 +31,14 @@ class Parser : public DiagnosticReporter {
 
   FileASTPtr ParseFile();
 
+  DeclarationPtr ParseInterfaceDeclaration(Scope* scope);
   DeclarationPtr ParseClassDeclaration(Scope* scope);
   ClassFieldPtr ParseClassField(Scope* scope);
   EmbeddingClassPtr ParseEmbeddingClass(Scope* scope);
+  Vector<SuperClassPtr> ParseSuperClasses(Scope* scope);
 
-  DeclarationPtr ParseFunctionDeclaration(Scope* scope);
-  FunctionExpressionPtr ParseLambdaExpression(Scope* scope);
+  FunctionDeclarationPtr ParseFunctionDeclaration(Scope* scope, bool needs_body = true);
+  FunctionExpressionPtr ParseLambdaExpression(Scope* scope, bool needs_body = true);
   BlockPtr ParseBlock(Scope* scope);
 
   StatementPtr ParseExpressionStatement(Scope* scope);

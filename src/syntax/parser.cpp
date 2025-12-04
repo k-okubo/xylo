@@ -125,8 +125,14 @@ static int TernaryPrecedence(Token token) {
 }
 
 
-static constexpr auto kStatementEndTokens = {Token::kSemicolon, Token::kNewline, Token::kClass,  Token::kDef,
-                                             Token::kLet,       Token::kVar,     Token::kReturn, Token::kRBrace};
+static constexpr auto kTopLevelEntityTokens = {Token::kInterface, Token::kClass, Token::kDef, Token::kRBrace};
+
+static constexpr auto kLambdaEndTokens = {Token::kSemicolon, Token::kNewline,   Token::kRParen, Token::kRBrack,
+                                          Token::kRBrace,    Token::kInterface, Token::kClass,  Token::kDef};
+
+static constexpr auto kStatementEndTokens = {Token::kSemicolon, Token::kNewline, Token::kInterface,
+                                             Token::kClass,     Token::kDef,     Token::kLet,
+                                             Token::kVar,       Token::kReturn,  Token::kRBrace};
 
 static constexpr auto kExpressionEndTokens = {Token::kSemicolon, Token::kNewline, Token::kComma,
                                               Token::kRParen,    Token::kRBrack,  Token::kRBrace};
@@ -138,6 +144,10 @@ FileASTPtr Parser::ParseFile() {
 
   while (PeekAhead() != Token::kEOF) {
     switch (PeekAhead()) {
+      case Token::kInterface:
+        file_ast->add_declaration(ParseInterfaceDeclaration(file_ast->scope()));
+        break;
+
       case Token::kClass:
         file_ast->add_declaration(ParseClassDeclaration(file_ast->scope()));
         break;
@@ -148,7 +158,7 @@ FileASTPtr Parser::ParseFile() {
 
       default:
         ErrorUnexpected();
-        Synchronize({Token::kClass, Token::kDef});
+        Synchronize(kTopLevelEntityTokens);
     }
   }
 
@@ -156,11 +166,54 @@ FileASTPtr Parser::ParseFile() {
 }
 
 
+DeclarationPtr Parser::ParseInterfaceDeclaration(Scope* scope) {
+  Expect(Token::kInterface);
+
+  if (!Expect(Token::kIdentifier)) {
+    Synchronize(kTopLevelEntityTokens);
+    return nullptr;
+  }
+
+  auto interface_name = LastTokenValue().as_identifier;
+  auto& ident_pos = LastTokenPosition();
+  auto symbol = Symbol::Create(Symbol::Kind::kClass, scope, interface_name, ident_pos);
+  auto interface = InterfaceDeclaration::Create(std::move(symbol));
+  auto inner_scope = scope->CreateChild();
+
+  if (PeekAhead() == Token::kColon) {
+    interface->set_supers(ParseSuperClasses(scope));
+  }
+
+  if (!Expect(Token::kLBrace)) {
+    Synchronize(kTopLevelEntityTokens);
+    return nullptr;
+  }
+
+  while (PeekAhead() != Token::kRBrace && PeekAhead() != Token::kEOF) {
+    switch (PeekAhead()) {
+      case Token::kDef:
+        interface->add_method(ParseFunctionDeclaration(inner_scope.get(), false));
+        break;
+
+      default:
+        ErrorUnexpected();
+        Synchronize({Token::kDef, Token::kRBrace});
+        break;
+    }
+  }
+
+  interface->set_scope(std::move(inner_scope));
+  Expect(Token::kRBrace);
+  ExpectEndOfStatement();
+  return interface;
+}
+
+
 DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
   Expect(Token::kClass);
 
   if (!Expect(Token::kIdentifier)) {
-    Synchronize({Token::kClass, Token::kDef});
+    Synchronize(kTopLevelEntityTokens);
     return nullptr;
   }
 
@@ -170,7 +223,15 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
   auto clazz = ClassDeclaration::Create(std::move(symbol));
   auto inner_scope = scope->CreateChild();
 
-  Expect(Token::kLBrace);
+  if (PeekAhead() == Token::kColon) {
+    clazz->set_supers(ParseSuperClasses(scope));
+  }
+
+  if (!Expect(Token::kLBrace)) {
+    Synchronize(kTopLevelEntityTokens);
+    return nullptr;
+  }
+
   while (PeekAhead() != Token::kRBrace && PeekAhead() != Token::kEOF) {
     switch (PeekAhead()) {
       case Token::kIdentifier: {
@@ -180,6 +241,11 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
 
       case Token::kEmbed:
         clazz->add_embedding(ParseEmbeddingClass(inner_scope.get()));
+        break;
+
+      case Token::kInterface:
+        ReportError(PeekTokenPosition(), "unsupported interface declaration inside class");
+        clazz->add_declaration(ParseInterfaceDeclaration(inner_scope.get()));
         break;
 
       case Token::kClass:
@@ -193,7 +259,7 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
 
       default:
         ErrorUnexpected();
-        Synchronize({Token::kClass, Token::kDef, Token::kRBrace});
+        Synchronize(kTopLevelEntityTokens);
         break;
     }
   }
@@ -236,11 +302,38 @@ EmbeddingClassPtr Parser::ParseEmbeddingClass(Scope* scope) {
 }
 
 
-DeclarationPtr Parser::ParseFunctionDeclaration(Scope* scope) {
+Vector<SuperClassPtr> Parser::ParseSuperClasses(Scope* scope) {
+  Expect(Token::kColon);
+  Vector<SuperClassPtr> supers;
+
+  bool first = true;
+  while (PeekAhead() == Token::kIdentifier || PeekAhead() == Token::kComma) {
+    if (!first) {
+      Expect(Token::kComma);
+    }
+    first = false;
+
+    if (Expect(Token::kIdentifier)) {
+      auto super_name = LastTokenValue().as_identifier;
+      auto& ident_pos = LastTokenPosition();
+      auto super = SuperClass::Create(super_name);
+      super->set_position(ident_pos);
+      supers.push_back(std::move(super));
+    } else {
+      Synchronize(kTopLevelEntityTokens);
+      return supers;
+    }
+  }
+
+  return supers;
+}
+
+
+FunctionDeclarationPtr Parser::ParseFunctionDeclaration(Scope* scope, bool needs_body) {
   Expect(Token::kDef);
 
   if (!Expect(Token::kIdentifier)) {
-    Synchronize({Token::kClass, Token::kDef, Token::kRBrace});
+    Synchronize(kTopLevelEntityTokens);
     return nullptr;
   }
 
@@ -248,9 +341,9 @@ DeclarationPtr Parser::ParseFunctionDeclaration(Scope* scope) {
   auto& ident_pos = LastTokenPosition();
   auto symbol = Symbol::Create(Symbol::Kind::kFunction, scope, func_name, ident_pos);
 
-  auto func_expr = ParseLambdaExpression(scope);
+  auto func_expr = ParseLambdaExpression(scope, needs_body);
   if (func_expr == nullptr) {
-    Synchronize({Token::kClass, Token::kDef, Token::kRBrace});
+    Synchronize(kTopLevelEntityTokens);
     return nullptr;
   }
 
@@ -259,10 +352,9 @@ DeclarationPtr Parser::ParseFunctionDeclaration(Scope* scope) {
 }
 
 
-FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope) {
+FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope, bool needs_body) {
   if (!Expect(Token::kLParen)) {
-    Synchronize({Token::kSemicolon, Token::kNewline, Token::kRParen, Token::kRBrack, Token::kRBrace, Token::kDef,
-                 Token::kClass});
+    Synchronize(kLambdaEndTokens);
     return nullptr;
   }
 
@@ -290,8 +382,7 @@ FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope) {
       params.push_back(std::move(param));
 
     } else {
-      Synchronize({Token::kSemicolon, Token::kNewline, Token::kRParen, Token::kRBrack, Token::kRBrace, Token::kDef,
-                   Token::kClass});
+      Synchronize(kLambdaEndTokens);
       return nullptr;
     }
   }
@@ -309,7 +400,7 @@ FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope) {
       if (return_type_repr) {
         ErrorExpected(Token::kLBrace, Token::kDoubleArrow);
       }
-      auto body_func = ParseLambdaExpression(func_scope.get());
+      auto body_func = ParseLambdaExpression(func_scope.get(), needs_body);
       auto body_stmt = ReturnStatement::Create(std::move(body_func));
       auto body_block = Block::Create();
       body_block->add_statement(std::move(body_stmt));
@@ -334,15 +425,23 @@ FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope) {
     }
 
     default:
-      ErrorUnexpected();
-      Synchronize({Token::kSemicolon, Token::kNewline, Token::kRParen, Token::kRBrack, Token::kRBrace, Token::kDef,
-                   Token::kClass});
-      return nullptr;
+      if (!needs_body) {
+        func_expr = FunctionExpression::Create(std::move(params), nullptr);
+        break;
+      } else {
+        ErrorUnexpected();
+        Synchronize(kLambdaEndTokens);
+        return nullptr;
+      }
   }
 
   func_expr->set_scope(std::move(func_scope));
   func_expr->set_return_type_repr(std::move(return_type_repr));
   func_expr->set_position(func_position);
+
+  if (!needs_body && func_expr->body() != nullptr) {
+    ReportError(func_expr->position(), "function body is not allowed here");
+  }
 
   return func_expr;
 }
@@ -354,6 +453,11 @@ BlockPtr Parser::ParseBlock(Scope* scope) {
 
   while (PeekAhead() != Token::kRBrace && PeekAhead() != Token::kEOF) {
     switch (PeekAhead()) {
+      case Token::kInterface:
+        ReportError(PeekTokenPosition(), "unsupported interface declaration inside block");
+        block->add_declaration(ParseInterfaceDeclaration(scope));
+        break;
+
       case Token::kClass:
         ReportError(PeekTokenPosition(), "unsupported class declaration inside block");
         block->add_declaration(ParseClassDeclaration(scope));

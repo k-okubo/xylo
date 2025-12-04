@@ -20,6 +20,7 @@ namespace xylo {
 
 class CodegenScope;
 class ModuleLowerer;
+class InterfaceLowerer;
 class ClassLowerer;
 class FunctionLowerer;
 using CodegenScopePtr = std::unique_ptr<CodegenScope>;
@@ -28,6 +29,7 @@ class CodegenScope {
  public:
   enum class Kind {
     kModule,
+    kInterface,
     kClass,
     kFunction,
   };
@@ -50,6 +52,7 @@ class CodegenScope {
       parent_(nullptr),
       type_env_(nullptr),
       childs_(),
+      interface_decls_(),
       class_decls_(),
       func_decls_(),
       specialized_funcs_() {}
@@ -72,10 +75,12 @@ class CodegenScope {
 
  protected:
   void RegisterDeclaration(Declaration* decl);
+  void RegisterInterface(InterfaceDeclaration* interface_decl);
   void RegisterClass(ClassDeclaration* class_decl);
   void RegisterFunction(FunctionDeclaration* func_decl);
 
-  llvm::StructType* GetOrCreateStruct(Symbol* symbol);
+  llvm::StructType* GetOrCreateVTableStruct(Symbol* symbol);
+  llvm::StructType* GetOrCreateInstanceStruct(Symbol* symbol);
 
   FunctionExpression* GetXyloFunction(Symbol* symbol);
   llvm::Function* GetOrBuildFunction(Symbol* symbol, const Vector<Type*>& type_args);
@@ -96,6 +101,7 @@ class CodegenScope {
   SubstitutionPtr type_env_;
   Vector<CodegenScopePtr> childs_;
 
+  Map<Symbol*, InterfaceDeclaration*> interface_decls_;
   Map<Symbol*, ClassDeclaration*> class_decls_;
   Map<Symbol*, FunctionDeclaration*> func_decls_;
   Map<std::pair<Symbol*, HString>, FunctionLowerer*, SymStrHash> specialized_funcs_;

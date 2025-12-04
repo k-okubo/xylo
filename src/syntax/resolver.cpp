@@ -59,6 +59,10 @@ void Resolver::PrevisitDeclaration(Declaration* decl, ResolutionContext* ctx) {
 
 void Resolver::VisitDeclaration(Declaration* decl, ResolutionContext* ctx) {
   switch (decl->kind()) {
+    case Declaration::Kind::kInterface:
+      VisitInterfaceDeclaration(decl->As<InterfaceDeclaration>(), ctx);
+      break;
+
     case Declaration::Kind::kClass:
       VisitClassDeclaration(decl->As<ClassDeclaration>(), ctx);
       break;
@@ -70,16 +74,38 @@ void Resolver::VisitDeclaration(Declaration* decl, ResolutionContext* ctx) {
 }
 
 
+void Resolver::VisitInterfaceDeclaration(InterfaceDeclaration* decl, ResolutionContext* ctx) {
+  for (auto& super : decl->supers()) {
+    VisitSuperClass(super.get(), ctx);
+  }
+
+  NameTable local_table(ctx->name_table);
+  ResolutionContext local_ctx = {&local_table, decl, nullptr};
+
+  for (auto& method : decl->methods()) {
+    PrevisitDeclaration(method.get(), &local_ctx);
+  }
+
+  for (auto& method : decl->methods()) {
+    VisitDeclaration(method.get(), &local_ctx);
+  }
+}
+
+
 void Resolver::VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* ctx) {
+  for (auto& super : decl->supers()) {
+    VisitSuperClass(super.get(), ctx);
+  }
+
+  for (auto& embedding : decl->embeddings()) {
+    VisitEmbeddingClass(embedding.get(), ctx);
+  }
+
   NameTable local_table(ctx->name_table);
   ResolutionContext local_ctx = {&local_table, decl, nullptr};
 
   for (auto& field : decl->fields()) {
     VisitClassField(field.get(), &local_ctx);
-  }
-
-  for (auto& embedding : decl->embeddings()) {
-    VisitEmbeddingClass(embedding.get(), &local_ctx);
   }
 
   for (auto& decl : decl->declarations()) {
@@ -115,6 +141,19 @@ void Resolver::VisitEmbeddingClass(EmbeddingClass* embedding, ResolutionContext*
     ErrorValueAsType(embedding->position(), symbol);
   } else {
     embedding->set_symbol(symbol);
+  }
+}
+
+
+void Resolver::VisitSuperClass(SuperClass* super, ResolutionContext* ctx) {
+  auto symbol = ctx->name_table->Lookup(super->name());
+
+  if (symbol == nullptr) {
+    ErrorUndeclared(super->position(), super->name());
+  } else if (symbol->kind() != Symbol::Kind::kClass) {
+    ErrorValueAsType(super->position(), symbol);
+  } else {
+    super->set_symbol(symbol);
   }
 }
 
@@ -321,7 +360,9 @@ void Resolver::VisitFunctionExpression(FunctionExpression* expr, ResolutionConte
     }
   }
 
-  VisitBlock(expr->body(), &local_ctx);
+  if (expr->body() != nullptr) {
+    VisitBlock(expr->body(), &local_ctx);
+  }
   if (expr->return_type_repr() != nullptr) {
     VisitTypeRepr(expr->return_type_repr(), &local_ctx);
   }

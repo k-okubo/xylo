@@ -53,21 +53,26 @@ llvm::Type* TypeConverter::ConvertNominalType(xylo::NominalType* type) {
     return llvm::Type::getDoubleTy(llvm_context_);
   }
 
-  return llvm::PointerType::getUnqual(llvm_context_);
+  return PointerType();
 }
 
 
 llvm::Type* TypeConverter::ConvertFunctionType(xylo::FunctionType* type, bool as_pointer) {
   if (as_pointer) {
-    return llvm::PointerType::getUnqual(llvm_context_);
+    return PointerType();
   }
 
   xylo::Vector<llvm::Type*> param_types;
-  param_types.push_back(llvm::PointerType::getUnqual(llvm_context_));  // closure environment
+  param_types.push_back(PointerType());  // closure environment
   for (auto elem : type->params_type()->elements()) {
     param_types.push_back(Convert(elem, true));
   }
 
   auto return_type = Convert(type->return_type(), true);
   return llvm::FunctionType::get(return_type, ToArrayRef(param_types), false);
+}
+
+
+llvm::Type* TypeConverter::PointerType() {
+  return llvm::PointerType::getUnqual(llvm_context_);
 }

@@ -61,7 +61,7 @@ class Resolver : public DiagnosticReporter {
  protected:
   struct ResolutionContext {
     NameTable* name_table;
-    ClassDeclaration* enclosing_class;
+    Declaration* enclosing_class;
     FunctionExpression* enclosing_func;
   };
 
@@ -72,9 +72,11 @@ class Resolver : public DiagnosticReporter {
 
   void PrevisitDeclaration(Declaration* decl, ResolutionContext* ctx);
   void VisitDeclaration(Declaration* decl, ResolutionContext* ctx);
+  void VisitInterfaceDeclaration(InterfaceDeclaration* decl, ResolutionContext* ctx);
   void VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* ctx);
   void VisitClassField(ClassField* field, ResolutionContext* ctx);
   void VisitEmbeddingClass(EmbeddingClass* embedding, ResolutionContext* ctx);
+  void VisitSuperClass(SuperClass* super, ResolutionContext* ctx);
   void VisitFunctionDeclaration(FunctionDeclaration* decl, ResolutionContext* ctx);
 
   void VisitBlock(Block* block, ResolutionContext* ctx);

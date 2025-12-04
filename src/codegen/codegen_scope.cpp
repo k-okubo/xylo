@@ -5,6 +5,7 @@
 
 #include "xylo/codegen/class_lowerer.h"
 #include "xylo/codegen/function_lowerer.h"
+#include "xylo/codegen/interface_lowerer.h"
 #include "xylo/codegen/type_converter.h"
 #include "xylo/util/contract.h"
 
@@ -103,6 +104,10 @@ static String ChildMangledName(CodegenScope* parent, Symbol* symbol, const HStri
 
 void CodegenScope::RegisterDeclaration(Declaration* decl) {
   switch (decl->kind()) {
+    case Declaration::Kind::kInterface:
+      RegisterInterface(decl->As<InterfaceDeclaration>());
+      break;
+
     case Declaration::Kind::kClass:
       RegisterClass(decl->As<ClassDeclaration>());
       break;
@@ -111,6 +116,12 @@ void CodegenScope::RegisterDeclaration(Declaration* decl) {
       RegisterFunction(decl->As<FunctionDeclaration>());
       break;
   }
+}
+
+
+void CodegenScope::RegisterInterface(InterfaceDeclaration* interface_decl) {
+  xylo_contract(interface_decl->symbol()->type()->kind() == Type::Kind::kNominal);
+  interface_decls_.emplace(interface_decl->symbol(), interface_decl);
 }
 
 
@@ -125,7 +136,38 @@ void CodegenScope::RegisterFunction(FunctionDeclaration* func_decl) {
 }
 
 
-llvm::StructType* CodegenScope::GetOrCreateStruct(Symbol* symbol) {
+llvm::StructType* CodegenScope::GetOrCreateVTableStruct(Symbol* symbol) {
+  xylo_contract(symbol->kind() == Symbol::Kind::kClass);
+
+  auto interface_type = symbol->type()->As<NominalType>();
+  auto interface_lowerer = root()->GetInterfaceLowerer(interface_type);
+
+  if (interface_lowerer == nullptr) {
+    auto lowerer = this;
+    while (true) {
+      // check scope
+      auto decl_it = lowerer->interface_decls_.find(symbol);
+      if (decl_it == lowerer->interface_decls_.end()) {
+        xylo_contract(lowerer->parent() != nullptr);
+        lowerer = lowerer->parent();
+        continue;
+      }
+
+      // found
+      auto interface_decl = decl_it->second;
+      auto ext_env = std::make_unique<Substitution>(lowerer->type_env());
+      interface_lowerer = new InterfaceLowerer(lowerer, std::move(ext_env), interface_decl);
+      interface_lowerer->set_interface_name(ChildMangledName(lowerer, symbol, HString()));
+      root()->RegisterInterfaceLowerer(interface_type, interface_lowerer);
+      break;
+    }
+  }
+
+  return interface_lowerer->GetOrCreateVTableStruct();
+}
+
+
+llvm::StructType* CodegenScope::GetOrCreateInstanceStruct(Symbol* symbol) {
   xylo_contract(symbol->kind() == Symbol::Kind::kClass);
 
   auto class_type = symbol->type()->As<NominalType>();
@@ -152,7 +194,7 @@ llvm::StructType* CodegenScope::GetOrCreateStruct(Symbol* symbol) {
     }
   }
 
-  return class_lowerer->GetOrCreate();
+  return class_lowerer->GetOrCreateInstanceStruct();
 }
 
 

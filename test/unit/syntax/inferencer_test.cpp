@@ -22,12 +22,12 @@ class Externals {
       animal_symbol_(Symbol::Kind::kClass, context->root_scope(), context->InternIdentifier("Animal")),
       dog_symbol_(Symbol::Kind::kClass, context->root_scope(), context->InternIdentifier("Dog")),
       cat_symbol_(Symbol::Kind::kClass, context->root_scope(), context->InternIdentifier("Cat")),
-      animal_type_(animal_symbol_.name()),
-      dog_type_(dog_symbol_.name()),
-      cat_type_(cat_symbol_.name()) {
+      animal_type_(NominalType::Category::kClass, animal_symbol_.name()),
+      dog_type_(NominalType::Category::kClass, dog_symbol_.name()),
+      cat_type_(NominalType::Category::kClass, cat_symbol_.name()) {
     // inheritance relationships
-    dog_type_.add_super(&animal_type_);
-    cat_type_.add_super(&animal_type_);
+    dog_type_.AddSuper(&animal_type_);
+    cat_type_.AddSuper(&animal_type_);
 
     animal_symbol_.set_type(&animal_type_);
     dog_symbol_.set_type(&dog_type_);
@@ -2483,10 +2483,190 @@ TEST(InferencerTest, Embedding_Cyclic) {
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_TRUE(inferencer.has_diagnostics());
-  EXPECT_EQ(inferencer.diagnostics().size(), 2);
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
   EXPECT_EQ(inferencer.diagnostics()[0].message, "cyclic embedding detected");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 13);
+}
+
+
+TEST(InferencerTest, Interface_Basic) {
+  auto source = R"(
+    def main() {
+      let foo = select(true)
+      return foo.get_value()
+    }
+
+    def select(cond) {
+      return cond ? new Foo{ value: 42 } : new Bar{}
+    }
+
+    interface ValueContainer {
+      def get_value(): int
+    }
+
+    class Foo : ValueContainer {
+      value: int
+      def get_value(): int => value
+    }
+
+    class Bar : ValueContainer {
+      def get_value(): int => 0
+    }
+  )";
+
+  XyloContext context;
+  Externals externals(&context);
+  auto file_ast = GetResolvedAST(&context, &externals, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(inferencer.has_diagnostics());
+
+  ASSERT_GE(file_ast->declarations().size(), 2);
+  ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
+  auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
+  auto& main_statements = main_decl->func()->body()->statements();
+  ASSERT_GE(main_statements.size(), 2);
+
+  auto let_stmt = main_statements[0]->As<LetStatement>();
+  auto let_expr = let_stmt->expr();
+
+  auto return_stmt = main_statements[1]->As<ReturnStatement>();
+  auto return_expr = return_stmt->expr();
+
+  ASSERT_EQ(file_ast->declarations()[2]->symbol()->name()->str().cpp_str(), "ValueContainer");
+  auto interface_decl = file_ast->declarations()[2]->As<InterfaceDeclaration>();
+  auto interface_type = interface_decl->symbol()->type()->As<NominalType>();
+
+  Substitution subst;
+  TypeSink allocated;
+  EXPECT_EQ(let_expr->type()->Zonk(&subst, true, &allocated), interface_type);
+  EXPECT_EQ(return_expr->type()->Zonk(&subst, true, &allocated), context.int_type());
+}
+
+
+TEST(InferencerTest, Interface_MissingTypeAnnotation) {
+  auto source = R"(
+    interface Printable {
+      def print()
+    }
+  )";
+
+  XyloContext context;
+  Externals externals(&context);
+  auto file_ast = GetResolvedAST(&context, &externals, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "interface methods must have explicit type annotations");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 11);
+}
+
+
+TEST(InferencerTest, Interface_MissingImplementation) {
+  auto source = R"(
+    interface Printable {
+      def print(): unit
+    }
+
+    class Circle : Printable {
+      radius: float
+    }
+  )";
+
+  XyloContext context;
+  Externals externals(&context);
+  auto file_ast = GetResolvedAST(&context, &externals, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "method 'print' from interface 'Printable' is not implemented");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 11);
+}
+
+
+TEST(InferencerTest, Interface_IncompleteTypeAnnotation) {
+  auto source = R"(
+    interface Container {
+      def get(): int
+    }
+
+    class Box : Container {
+      value: int
+      def get() => value
+    }
+  )";
+
+  XyloContext context;
+  Externals externals(&context);
+  auto file_ast = GetResolvedAST(&context, &externals, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message,
+            "method 'get' implementing 'Container' must have an explicit type annotation");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 8);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 11);
+}
+
+
+TEST(InferencerTest, Interface_IncompatibleImplementation) {
+  auto source = R"(
+    interface Printable {
+      def print(): unit
+    }
+
+    class Square : Printable {
+      side: float
+      def print(): int => 42
+    }
+  )";
+
+  XyloContext context;
+  Externals externals(&context);
+  auto file_ast = GetResolvedAST(&context, &externals, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "method 'print' must match signature in 'Printable'");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 8);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 11);
+}
+
+
+TEST(InferencerTest, Interface_Cyclic) {
+  auto source = R"(
+    interface A : B {
+      def foo(): int
+    }
+
+    interface B : A {
+      def bar(): int
+    }
+  )";
+
+  XyloContext context;
+  Externals externals(&context);
+  auto file_ast = GetResolvedAST(&context, &externals, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "cyclic inheritance detected");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 19);
 }
 
 

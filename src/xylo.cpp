@@ -38,6 +38,12 @@ static void DumpDelarations(int indent, xylo::Block* block, xylo::TypePrinter::N
   }
 }
 
+static void DumpDeclarations(int indent, xylo::InterfaceDeclaration* interface, xylo::TypePrinter::NameMap* name_map) {
+  for (auto& decl : interface->methods()) {
+    DumpDeclaration(indent, decl.get(), name_map);
+  }
+}
+
 static void DumpDeclarations(int indent, xylo::ClassDeclaration* clazz, xylo::TypePrinter::NameMap* name_map) {
   for (auto& decl : clazz->declarations()) {
     DumpDeclaration(indent, decl.get(), name_map);
@@ -59,6 +65,12 @@ static void DumpDeclaration(int indent, xylo::Declaration* decl, xylo::TypePrint
   std::cout << std::endl;
 
   switch (decl->kind()) {
+    case xylo::Declaration::Kind::kInterface: {
+      auto interface = decl->As<xylo::InterfaceDeclaration>();
+      DumpDeclarations(indent + 1, interface, name_map);
+      break;
+    }
+
     case xylo::Declaration::Kind::kClass: {
       auto clazz = decl->As<xylo::ClassDeclaration>();
       DumpDeclarations(indent + 1, clazz, name_map);
@@ -67,12 +79,11 @@ static void DumpDeclaration(int indent, xylo::Declaration* decl, xylo::TypePrint
 
     case xylo::Declaration::Kind::kFunction: {
       auto func_decl = decl->As<xylo::FunctionDeclaration>();
-      DumpDelarations(indent + 1, func_decl->func()->body(), name_map);
+      if (func_decl->func()->body() != nullptr) {
+        DumpDelarations(indent + 1, func_decl->func()->body(), name_map);
+      }
       break;
     }
-
-    default:
-      break;
   }
 }
 

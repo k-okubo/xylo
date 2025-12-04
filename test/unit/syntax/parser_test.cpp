@@ -95,6 +95,44 @@ TEST(ParserTest, InvalidClassMethod) {
 }
 
 
+TEST(ParserTest, EmptyInterface) {
+  auto source = "interface Comparable { }";
+  XyloContext context;
+  Lexer lexer(&context, source);
+  Parser parser(&context, &lexer);
+
+  auto file_ast = parser.ParseFile();
+  ASSERT_FALSE(parser.has_diagnostics());
+
+  ASSERT_EQ(file_ast->declarations().size(), 1u);
+  auto decl = file_ast->declarations()[0].get();
+  auto interface_decl = decl->As<InterfaceDeclaration>();
+
+  EXPECT_EQ(interface_decl->symbol()->name()->str().cpp_str(), "Comparable");
+  EXPECT_EQ(interface_decl->methods().size(), 0u);
+}
+
+
+TEST(ParserTest, InterfaceWithMethod) {
+  auto source = "interface Foo { def foo(a: int, b: int): Foo }";
+  XyloContext context;
+  Lexer lexer(&context, source);
+  Parser parser(&context, &lexer);
+
+  auto file_ast = parser.ParseFile();
+  ASSERT_FALSE(parser.has_diagnostics());
+
+  ASSERT_EQ(file_ast->declarations().size(), 1u);
+  auto decl = file_ast->declarations()[0].get();
+  auto interface_decl = decl->As<InterfaceDeclaration>();
+
+  EXPECT_EQ(interface_decl->symbol()->name()->str().cpp_str(), "Foo");
+  ASSERT_EQ(interface_decl->methods().size(), 1u);
+  auto method_decl = interface_decl->methods()[0].get();
+  EXPECT_EQ(method_decl->symbol()->name()->str().cpp_str(), "foo");
+}
+
+
 TEST(ParserTest, BasicFunction) {
   auto source = "def foo() { return true; }";
   XyloContext context;

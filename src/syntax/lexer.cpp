@@ -10,6 +10,7 @@
 namespace xylo {
 
 
+static constexpr HStringView kKeyword_Interface("interface");
 static constexpr HStringView kKeyword_Class("class");
 static constexpr HStringView kKeyword_Embed("embed");
 static constexpr HStringView kKeyword_Def("def");
@@ -82,6 +83,12 @@ static bool IsIdentifierPart(char c) {
 
 static Token CheckKeyword(const HStringView& ident_str) {
   switch (ident_str.hash()) {
+    case kKeyword_Interface.hash():
+      if (ident_str == kKeyword_Interface) {
+        return Token::kInterface;
+      }
+      break;
+
     case kKeyword_Class.hash():
       if (ident_str == kKeyword_Class) {
         return Token::kClass;

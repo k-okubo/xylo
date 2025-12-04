@@ -16,15 +16,15 @@ class TestTypes {
  public:
   TestTypes() :
       context_(),
-      foo_type_(context_.InternIdentifier("Foo")),
-      base1_type_(context_.InternIdentifier("Base1")),
-      base2_type_(context_.InternIdentifier("Base2")),
-      bar_type_(context_.InternIdentifier("Bar")),
-      baz_type_(context_.InternIdentifier("Baz")) {
+      foo_type_(NominalType::Category::kClass, context_.InternIdentifier("Foo")),
+      base1_type_(NominalType::Category::kClass, context_.InternIdentifier("Base1")),
+      base2_type_(NominalType::Category::kClass, context_.InternIdentifier("Base2")),
+      bar_type_(NominalType::Category::kClass, context_.InternIdentifier("Bar")),
+      baz_type_(NominalType::Category::kClass, context_.InternIdentifier("Baz")) {
     // inheritance relationships
-    base2_type_.add_super(&base1_type_);
-    bar_type_.add_super(&base2_type_);
-    baz_type_.add_super(&base2_type_);
+    base2_type_.AddSuper(&base1_type_);
+    bar_type_.AddSuper(&base2_type_);
+    baz_type_.AddSuper(&base2_type_);
   }
 
   XyloContext* context() { return &context_; }
@@ -962,16 +962,16 @@ TEST(TypeTest, TypeMetavar_MultiSupertype) {
     auto baz_ident = new Identifier(HString("Baz"));
     auto baseA_ident = new Identifier(HString("BaseA"));
     auto baseB_ident = new Identifier(HString("BaseB"));
-    auto foo_type = new NominalType(foo_ident);
-    auto bar_type = new NominalType(bar_ident);
-    auto baz_type = new NominalType(baz_ident);
-    auto baseA_type = new NominalType(baseA_ident);
-    auto baseB_type = new NominalType(baseB_ident);
+    auto foo_type = new NominalType(NominalType::Category::kClass, foo_ident);
+    auto bar_type = new NominalType(NominalType::Category::kClass, bar_ident);
+    auto baz_type = new NominalType(NominalType::Category::kClass, baz_ident);
+    auto baseA_type = new NominalType(NominalType::Category::kClass, baseA_ident);
+    auto baseB_type = new NominalType(NominalType::Category::kClass, baseB_ident);
 
-    foo_type->add_super(baseA_type);
-    foo_type->add_super(baseB_type);
-    bar_type->add_super(baseA_type);
-    baz_type->add_super(baseB_type);
+    foo_type->AddSuper(baseA_type);
+    foo_type->AddSuper(baseB_type);
+    bar_type->AddSuper(baseA_type);
+    baz_type->AddSuper(baseB_type);
     auto metavar = new TypeMetavar();
 
     if (i == 0) {
@@ -1334,8 +1334,8 @@ TEST(TypeTest, FunctionVariable_ParamSibling) {
   auto bar_type = types.bar_type();
 
   // bar <: (base2 & other_base)
-  auto other_base_type = new NominalType(types.context()->InternIdentifier("OtherBase"));
-  bar_type->add_super(other_base_type);
+  auto other_base_type = new NominalType(NominalType::Category::kClass, types.context()->InternIdentifier("OtherBase"));
+  bar_type->AddSuper(other_base_type);
 
   // metavar1 -> foo
   auto metavar1 = new TypeMetavar();
@@ -1487,12 +1487,12 @@ TEST(TypeTest, ExtractField_FromNominal) {
   auto ident_age = types.context()->InternIdentifier("age");
 
   // Animal { age: bar }
-  auto animal_type = new NominalType(types.context()->InternIdentifier("Animal"));
+  auto animal_type = new NominalType(NominalType::Category::kClass, types.context()->InternIdentifier("Animal"));
   animal_type->AddField(ident_age, bar_type);
 
   // Dog <: Animal
-  auto dog_type = new NominalType(types.context()->InternIdentifier("Dog"));
-  dog_type->add_super(animal_type);
+  auto dog_type = new NominalType(NominalType::Category::kClass, types.context()->InternIdentifier("Dog"));
+  dog_type->AddSuper(animal_type);
 
   // has member
   auto extvar = new TypeMetavar();
@@ -1516,12 +1516,12 @@ TEST(TypeTest, ExtractField_FromTyvar) {
   auto ident_age = types.context()->InternIdentifier("age");
 
   // Animal { age: bar }
-  auto animal_type = new NominalType(types.context()->InternIdentifier("Animal"));
+  auto animal_type = new NominalType(NominalType::Category::kClass, types.context()->InternIdentifier("Animal"));
   animal_type->AddField(ident_age, bar_type);
 
   // Dog <: Animal
-  auto dog_type = new NominalType(types.context()->InternIdentifier("Dog"));
-  dog_type->add_super(animal_type);
+  auto dog_type = new NominalType(NominalType::Category::kClass, types.context()->InternIdentifier("Dog"));
+  dog_type->AddSuper(animal_type);
 
   // Dog <: tyvar
   auto tyvar = new TypeVariable(0);
@@ -1550,16 +1550,16 @@ TEST(TypeTest, ExtractField_FakeSubtyping) {
   auto ident_name = types.context()->InternIdentifier("name");
 
   // Animal
-  auto animal_type = new NominalType(types.context()->InternIdentifier("Animal"));
+  auto animal_type = new NominalType(NominalType::Category::kClass, types.context()->InternIdentifier("Animal"));
 
   // Dog { name: bar } <: Animal
-  auto dog_type = new NominalType(types.context()->InternIdentifier("Dog"));
-  dog_type->add_super(animal_type);
+  auto dog_type = new NominalType(NominalType::Category::kClass, types.context()->InternIdentifier("Dog"));
+  dog_type->AddSuper(animal_type);
   dog_type->AddField(ident_name, bar_type);
 
   // Cat { name: bar } <: Animal
-  auto cat_type = new NominalType(types.context()->InternIdentifier("Cat"));
-  cat_type->add_super(animal_type);
+  auto cat_type = new NominalType(NominalType::Category::kClass, types.context()->InternIdentifier("Cat"));
+  cat_type->AddSuper(animal_type);
   cat_type->AddField(ident_name, bar_type);
 
   // (Dog | Cat) <: metavar

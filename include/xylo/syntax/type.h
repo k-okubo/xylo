@@ -19,7 +19,6 @@ namespace xylo {
 
 class Type;
 class NominalType;
-class MemberInfo;
 class FunctionType;
 class TupleType;
 class IntersectionType;
@@ -27,13 +26,18 @@ class UnionType;
 class TypeMetavar;
 class TypeScheme;
 
+class NominalSlot;
+class MemberInfo;
+class SuperInfo;
+
 using TypePtr = std::unique_ptr<Type>;
 using TypePtrVec = Vector<TypePtr>;
-using MemberInfoPtr = std::unique_ptr<MemberInfo>;
 using FunctionTypePtr = std::unique_ptr<FunctionType>;
 using IntersectionTypePtr = std::unique_ptr<IntersectionType>;
 using UnionTypePtr = std::unique_ptr<UnionType>;
 
+using MemberInfoPtr = std::unique_ptr<MemberInfo>;
+using SuperInfoPtr = std::unique_ptr<SuperInfo>;
 using TypePairSet = Set<std::pair<const Type*, const Type*>, PairHash>;
 
 class Substitution;
@@ -149,68 +153,99 @@ class ErrorType : public Type {
 
 class NominalType : public Type {
  public:
-  explicit NominalType(Identifier* name) :
+  enum class Category {
+    kInterface,
+    kClass,
+    kPrimitive,
+    kConcept,
+  };
+
+  explicit NominalType(Category category, Identifier* name) :
       Type(Kind::kNominal),
+      category_(category),
       name_(name),
-      supers_(),
       fields_(),
-      embeddings_(),
       methods_(),
-      member_map_() {}
+      embeddings_(),
+      supers_(),
+      member_map_(),
+      super_infos_() {}
 
+  Category category() const { return category_; }
   Identifier* name() const { return name_; }
-
-  const Vector<NominalType*>& supers() const { return supers_; }
-  void add_super(NominalType* super) { supers_.push_back(super); }
 
   const Vector<MemberInfo*>& fields() const { return fields_; }
   const Vector<MemberInfo*>& methods() const { return methods_; }
+  const Vector<MemberInfo*>& embeddings() const { return embeddings_; }
+  const Vector<NominalType*>& supers() const { return supers_; }
 
   bool equals(const Type* other) const override;
   bool is_atomic_type() const override { return true; }
 
-  MemberInfo* GetMember(Identifier* member_name) const;
+  MemberInfo* GetMember(Identifier* member_name, bool include_super = true) const;
   MemberInfo* GetDeclaredMember(Identifier* member_name) const;
-  bool GetMemberPath(Identifier* member_name, Vector<MemberInfo*>* out_path) const;
+  bool GetMemberPath(Identifier* member_name, Vector<NominalSlot*>* out_path) const;
+  bool GetSuperPath(NominalType* super, Vector<NominalSlot*>* out_path) const;
   void FindEmbededMembers(Identifier* member_name, Vector<MemberInfo*>* out_members) const;
-  bool HasEmbedding(NominalType* clazz) const;
+  void FindSuperMembers(Identifier* member_name, Vector<MemberInfo*>* out_members) const;
+  void FindSuperMethods(Vector<MemberInfo*>* out_members) const;
 
   MemberInfo* AddField(Identifier* field_name, Type* field_type);
-  MemberInfo* AddEmbedding(Identifier* field_name, NominalType* clazz);
   MemberInfo* AddMethod(Identifier* method_name, Type* method_type);
+  MemberInfo* AddEmbedding(Identifier* field_name, NominalType* clazz);
+  bool AddSuper(NominalType* clazz);
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
   Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
 
  private:
+  Category category_;
   Identifier* name_;
-  Vector<NominalType*> supers_;
   Vector<MemberInfo*> fields_;
-  Vector<MemberInfo*> embeddings_;
   Vector<MemberInfo*> methods_;
+  Vector<MemberInfo*> embeddings_;
+  Vector<NominalType*> supers_;
+
   Map<Identifier*, MemberInfoPtr> member_map_;
+  Vector<SuperInfoPtr> super_infos_;
 };
 
 
-class MemberInfo {
+class NominalSlot {
  public:
   enum class Kind {
     kField,
-    kEmbedding,
     kMethod,
+    kEmbedding,
+    kSuper,
   };
 
-  MemberInfo(NominalType* owner, Kind kind, int index, Identifier* name, Type* type) :
+  NominalSlot(NominalType* owner, Kind kind, int index) :
       owner_(owner),
       kind_(kind),
-      index_(index),
-      name_(name),
-      type_(type),
-      type_resolver_() {}
+      index_(index) {}
+
+  virtual ~NominalSlot() = default;
 
   NominalType* owner() const { return owner_; }
   Kind kind() const { return kind_; }
   int index() const { return index_; }
+
+ private:
+  NominalType* owner_;
+  Kind kind_;
+  int index_;
+};
+
+
+class MemberInfo : public NominalSlot {
+ public:
+  MemberInfo(NominalType* owner, Kind kind, int index, Identifier* name, Type* type) :
+      NominalSlot(owner, kind, index),
+      name_(name),
+      type_(type),
+      type_resolver_() {}
+
   Identifier* name() const { return name_; }
 
   Type* type() const { return type_; }
@@ -225,12 +260,22 @@ class MemberInfo {
   }
 
  private:
-  NominalType* owner_;
-  Kind kind_;
-  int index_;
   Identifier* name_;
   Type* type_;
   std::function<void()> type_resolver_;
+};
+
+
+class SuperInfo : public NominalSlot {
+ public:
+  SuperInfo(NominalType* owner, int index, NominalType* type) :
+      NominalSlot(owner, Kind::kSuper, index),
+      type_(type) {}
+
+  NominalType* type() const { return type_; }
+
+ private:
+  NominalType* type_;
 };
 
 
@@ -243,6 +288,7 @@ class MemberRequirement : public Type {
       mutable_(false),
       resolved_(nullptr),
       instantiated_vars_(),
+      origin_owner_(nullptr),
       on_error_(nullptr) {}
 
   Identifier* name() const { return name_; }
@@ -259,6 +305,9 @@ class MemberRequirement : public Type {
 
   const Vector<TypeMetavar*>& instantiated_vars() const { return instantiated_vars_; }
   void set_instantiated_vars(Vector<TypeMetavar*>&& vars) { instantiated_vars_ = std::move(vars); }
+
+  Type* origin_owner() const { return origin_owner_; }
+  void set_origin_owner(Type* owner) { origin_owner_ = owner; }
 
   std::function<void(const NominalType*)> on_error() const { return on_error_; }
   void set_on_error(std::function<void(const NominalType*)> on_error) { on_error_ = on_error; }
@@ -284,6 +333,7 @@ class MemberRequirement : public Type {
   bool mutable_;
   MemberInfo* resolved_;
   Vector<TypeMetavar*> instantiated_vars_;
+  Type* origin_owner_;
   std::function<void(const NominalType*)> on_error_;
 };
 

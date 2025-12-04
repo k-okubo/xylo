@@ -30,6 +30,7 @@ class TupleTypeRepr;
 
 class ClassField;
 class EmbeddingClass;
+class SuperClass;
 class FunctionParam;
 class Initializer;
 class ObjectInitializer;
@@ -51,6 +52,7 @@ using TupleTypeReprPtr = std::unique_ptr<TupleTypeRepr>;
 
 using ClassFieldPtr = std::unique_ptr<ClassField>;
 using EmbeddingClassPtr = std::unique_ptr<EmbeddingClass>;
+using SuperClassPtr = std::unique_ptr<SuperClass>;
 using FunctionParamPtr = std::unique_ptr<FunctionParam>;
 using InitializerPtr = std::unique_ptr<Initializer>;
 using ObjectInitializerPtr = std::unique_ptr<ObjectInitializer>;
@@ -193,6 +195,7 @@ class FileAST {
 class Declaration : public Downcastable {
  public:
   enum class Kind {
+    kInterface,
     kClass,
     kFunction,
   };
@@ -217,10 +220,42 @@ class Declaration : public Downcastable {
 };
 
 
+class InterfaceDeclaration : public Declaration {
+ public:
+  static auto Create(SymbolPtr&& symbol) {
+    auto p = new InterfaceDeclaration(std::move(symbol));
+    return std::unique_ptr<InterfaceDeclaration>(p);
+  }
+
+ protected:
+  explicit InterfaceDeclaration(SymbolPtr&& symbol) :
+      Declaration(Kind::kInterface, std::move(symbol)),
+      scope_(nullptr),
+      methods_(),
+      supers_() {}
+
+ public:
+  Scope* scope() const { return scope_.get(); }
+  void set_scope(ScopePtr&& scope) { scope_ = std::move(scope); }
+
+  const Vector<FunctionDeclarationPtr>& methods() const { return methods_; }
+  void add_method(FunctionDeclarationPtr&& method) { methods_.push_back(std::move(method)); }
+
+  const Vector<SuperClassPtr>& supers() const { return supers_; }
+  void set_supers(Vector<SuperClassPtr>&& supers) { supers_ = std::move(supers); }
+
+ private:
+  ScopePtr scope_;
+  Vector<FunctionDeclarationPtr> methods_;
+  Vector<SuperClassPtr> supers_;
+};
+
+
 class ClassDeclaration : public Declaration {
  public:
   static auto Create(SymbolPtr&& symbol) {
-    return std::unique_ptr<ClassDeclaration>(new ClassDeclaration(std::move(symbol)));
+    auto p = new ClassDeclaration(std::move(symbol));
+    return std::unique_ptr<ClassDeclaration>(p);
   }
 
  protected:
@@ -228,8 +263,9 @@ class ClassDeclaration : public Declaration {
       Declaration(Kind::kClass, std::move(symbol)),
       scope_(nullptr),
       fields_(),
+      declarations_(),
       embeddings_(),
-      declarations_() {}
+      supers_() {}
 
  public:
   Scope* scope() const { return scope_.get(); }
@@ -238,17 +274,21 @@ class ClassDeclaration : public Declaration {
   const Vector<ClassFieldPtr>& fields() const { return fields_; }
   void add_field(ClassFieldPtr&& field) { fields_.push_back(std::move(field)); }
 
+  const Vector<DeclarationPtr>& declarations() const { return declarations_; }
+  void add_declaration(DeclarationPtr&& decl) { declarations_.push_back(std::move(decl)); }
+
   const Vector<EmbeddingClassPtr>& embeddings() const { return embeddings_; }
   void add_embedding(EmbeddingClassPtr&& embedding) { embeddings_.push_back(std::move(embedding)); }
 
-  const Vector<DeclarationPtr>& declarations() const { return declarations_; }
-  void add_declaration(DeclarationPtr&& decl) { declarations_.push_back(std::move(decl)); }
+  const Vector<SuperClassPtr>& supers() const { return supers_; }
+  void set_supers(Vector<SuperClassPtr>&& supers) { supers_ = std::move(supers); }
 
  private:
   ScopePtr scope_;
   Vector<ClassFieldPtr> fields_;
-  Vector<EmbeddingClassPtr> embeddings_;
   Vector<DeclarationPtr> declarations_;
+  Vector<EmbeddingClassPtr> embeddings_;
+  Vector<SuperClassPtr> supers_;
 };
 
 
@@ -285,6 +325,35 @@ class EmbeddingClass {
 
  protected:
   explicit EmbeddingClass(Identifier* name) :
+      name_(name),
+      position_(),
+      symbol_(nullptr) {}
+
+ public:
+  Identifier* name() const { return name_; }
+
+  const SourceRange& position() const { return position_; }
+  void set_position(const SourceRange& position) { position_ = position; }
+
+  Symbol* symbol() const { return symbol_; }
+  void set_symbol(Symbol* symbol) { symbol_ = symbol; }
+
+ private:
+  Identifier* name_;
+  SourceRange position_;
+  Symbol* symbol_;
+};
+
+
+class SuperClass {
+ public:
+  static auto Create(Identifier* name) {
+    auto p = new SuperClass(name);
+    return std::unique_ptr<SuperClass>(p);
+  }
+
+ protected:
+  explicit SuperClass(Identifier* name) :
       name_(name),
       position_(),
       symbol_(nullptr) {}

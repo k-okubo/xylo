@@ -125,7 +125,7 @@ static int TernaryPrecedence(Token token) {
 }
 
 
-static constexpr auto kTopLevelEntityTokens = {Token::kInterface, Token::kClass, Token::kDef, Token::kRBrace};
+static constexpr auto kDeclarationEndTokens = {Token::kInterface, Token::kClass, Token::kDef, Token::kRBrace};
 
 static constexpr auto kLambdaEndTokens = {Token::kSemicolon, Token::kNewline,   Token::kRParen, Token::kRBrack,
                                           Token::kRBrace,    Token::kInterface, Token::kClass,  Token::kDef};
@@ -158,7 +158,7 @@ FileASTPtr Parser::ParseFile() {
 
       default:
         ErrorUnexpected();
-        Synchronize(kTopLevelEntityTokens);
+        Synchronize(kDeclarationEndTokens);
     }
   }
 
@@ -170,7 +170,7 @@ DeclarationPtr Parser::ParseInterfaceDeclaration(Scope* scope) {
   Expect(Token::kInterface);
 
   if (!Expect(Token::kIdentifier)) {
-    Synchronize(kTopLevelEntityTokens);
+    Synchronize(kDeclarationEndTokens);
     return nullptr;
   }
 
@@ -185,7 +185,7 @@ DeclarationPtr Parser::ParseInterfaceDeclaration(Scope* scope) {
   }
 
   if (!Expect(Token::kLBrace)) {
-    Synchronize(kTopLevelEntityTokens);
+    Synchronize(kDeclarationEndTokens);
     return nullptr;
   }
 
@@ -213,7 +213,7 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
   Expect(Token::kClass);
 
   if (!Expect(Token::kIdentifier)) {
-    Synchronize(kTopLevelEntityTokens);
+    Synchronize(kDeclarationEndTokens);
     return nullptr;
   }
 
@@ -228,7 +228,7 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
   }
 
   if (!Expect(Token::kLBrace)) {
-    Synchronize(kTopLevelEntityTokens);
+    Synchronize(kDeclarationEndTokens);
     return nullptr;
   }
 
@@ -259,7 +259,7 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
 
       default:
         ErrorUnexpected();
-        Synchronize(kTopLevelEntityTokens);
+        Synchronize(kDeclarationEndTokens);
         break;
     }
   }
@@ -320,7 +320,7 @@ Vector<SuperClassPtr> Parser::ParseSuperClasses(Scope* scope) {
       super->set_position(ident_pos);
       supers.push_back(std::move(super));
     } else {
-      Synchronize(kTopLevelEntityTokens);
+      Synchronize(kDeclarationEndTokens);
       return supers;
     }
   }
@@ -333,7 +333,7 @@ FunctionDeclarationPtr Parser::ParseFunctionDeclaration(Scope* scope, bool needs
   Expect(Token::kDef);
 
   if (!Expect(Token::kIdentifier)) {
-    Synchronize(kTopLevelEntityTokens);
+    Synchronize(kDeclarationEndTokens);
     return nullptr;
   }
 
@@ -343,7 +343,7 @@ FunctionDeclarationPtr Parser::ParseFunctionDeclaration(Scope* scope, bool needs
 
   auto func_expr = ParseLambdaExpression(scope, needs_body);
   if (func_expr == nullptr) {
-    Synchronize(kTopLevelEntityTokens);
+    Synchronize(kDeclarationEndTokens);
     return nullptr;
   }
 

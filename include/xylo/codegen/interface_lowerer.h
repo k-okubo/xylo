@@ -15,7 +15,7 @@ class InterfaceLowerer : public DeclarationLowerer {
       DeclarationLowerer(Kind::kInterface, parent, std::move(type_env)),
       interface_decl_(interface_decl),
       interface_name_(),
-      llvm_struct_(nullptr) {}
+      vtable_struct_(nullptr) {}
 
   ~InterfaceLowerer() = default;
 
@@ -36,7 +36,7 @@ class InterfaceLowerer : public DeclarationLowerer {
  private:
   InterfaceDeclaration* interface_decl_;
   String interface_name_;
-  llvm::StructType* llvm_struct_;
+  llvm::StructType* vtable_struct_;
 };
 
 

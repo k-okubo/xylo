@@ -7,12 +7,12 @@ namespace xylo {
 
 
 llvm::StructType* InterfaceLowerer::GetOrCreateVTableStruct() {
-  if (llvm_struct_ != nullptr) {
-    return llvm_struct_;
+  if (vtable_struct_ != nullptr) {
+    return vtable_struct_;
   }
 
-  llvm_struct_ = CreateVTableStruct();
-  return llvm_struct_;
+  vtable_struct_ = CreateVTableStruct();
+  return vtable_struct_;
 }
 
 

@@ -275,8 +275,8 @@ void Resolver::VisitExpression(Expression* expr, ResolutionContext* ctx) {
       VisitConditionalExpression(expr->As<ConditionalExpression>(), ctx);
       break;
 
-    case Expression::Kind::kNew:
-      VisitNewExpression(expr->As<NewExpression>(), ctx);
+    case Expression::Kind::kConstruct:
+      VisitConstructExpression(expr->As<ConstructExpression>(), ctx);
       break;
 
     case Expression::Kind::kProjection:
@@ -409,7 +409,7 @@ void Resolver::VisitConditionalExpression(ConditionalExpression* expr, Resolutio
 }
 
 
-void Resolver::VisitNewExpression(NewExpression* expr, ResolutionContext* ctx) {
+void Resolver::VisitConstructExpression(ConstructExpression* expr, ResolutionContext* ctx) {
   auto class_symbol = ctx->name_table->Lookup(expr->class_name());
 
   if (class_symbol == nullptr) {

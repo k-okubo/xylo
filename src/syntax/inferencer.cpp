@@ -577,8 +577,8 @@ void Inferencer::VisitExpression(Expression* expr, InferenceContext* ctx) {
       VisitConditionalExpression(expr->As<ConditionalExpression>(), ctx);
       break;
 
-    case Expression::Kind::kNew:
-      VisitNewExpression(expr->As<NewExpression>(), ctx);
+    case Expression::Kind::kConstruct:
+      VisitConstructExpression(expr->As<ConstructExpression>(), ctx);
       break;
 
     case Expression::Kind::kProjection:
@@ -1078,7 +1078,7 @@ void Inferencer::VisitConditionalExpression(ConditionalExpression* expr, Inferen
 }
 
 
-void Inferencer::VisitNewExpression(NewExpression* expr, InferenceContext* ctx) {
+void Inferencer::VisitConstructExpression(ConstructExpression* expr, InferenceContext* ctx) {
   xylo_contract(expr->type() == nullptr);
   xylo_contract(expr->class_symbol() != nullptr);
 

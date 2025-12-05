@@ -96,7 +96,7 @@ class Inferencer : public DiagnosticReporter {
   void VisitUnaryExpression(UnaryExpression* expr, InferenceContext* ctx);
   void VisitBinaryExpression(BinaryExpression* expr, InferenceContext* ctx);
   void VisitConditionalExpression(ConditionalExpression* expr, InferenceContext* ctx);
-  void VisitNewExpression(NewExpression* expr, InferenceContext* ctx);
+  void VisitConstructExpression(ConstructExpression* expr, InferenceContext* ctx);
   void VisitProjectionExpression(ProjectionExpression* expr, InferenceContext* ctx);
   void VisitBlockExpression(BlockExpression* expr, InferenceContext* ctx);
 

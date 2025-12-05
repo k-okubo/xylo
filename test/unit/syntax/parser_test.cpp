@@ -735,8 +735,8 @@ TEST(ParserTest, ParseExpression_New) {
   auto expr = parser.ParseExpression(scope.get());
   ASSERT_FALSE(parser.has_diagnostics());
 
-  auto new_expr = expr->As<NewExpression>();
-  auto initializer = new_expr->initializer();
+  auto construct_expr = expr->As<ConstructExpression>();
+  auto initializer = construct_expr->initializer();
   auto& init_list = initializer->entries();
   ASSERT_EQ(init_list.size(), 2u);
 

@@ -137,8 +137,8 @@ void Verifier::VisitExpression(Expression* expr, FlowState* state) {
       VisitConditionalExpression(expr->As<ConditionalExpression>(), state);
       break;
 
-    case Expression::Kind::kNew:
-      VisitNewExpression(expr->As<NewExpression>(), state);
+    case Expression::Kind::kConstruct:
+      VisitConstructExpression(expr->As<ConstructExpression>(), state);
       break;
 
     case Expression::Kind::kProjection:
@@ -208,7 +208,7 @@ void Verifier::VisitConditionalExpression(ConditionalExpression* expr, FlowState
 }
 
 
-void Verifier::VisitNewExpression(NewExpression* expr, FlowState* state) {
+void Verifier::VisitConstructExpression(ConstructExpression* expr, FlowState* state) {
   VisitObjectInitializer(expr->initializer(), state);
 }
 

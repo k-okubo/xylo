@@ -360,8 +360,8 @@ TEST(ResolverTest, VisitFileAST_NewExpression) {
   auto return_stmt = statements[0]->As<ReturnStatement>();
   auto return_expr = return_stmt->expr();
 
-  auto new_expr = return_expr->As<NewExpression>();
-  EXPECT_EQ(new_expr->class_symbol(), class_symbol);
+  auto construct_expr = return_expr->As<ConstructExpression>();
+  EXPECT_EQ(construct_expr->class_symbol(), class_symbol);
 }
 
 

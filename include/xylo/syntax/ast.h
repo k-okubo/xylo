@@ -553,7 +553,7 @@ class Expression : public TypeSink, public Downcastable {
     kUnary,
     kBinary,
     kConditional,
-    kNew,
+    kConstruct,
     kProjection,
     kBlock,
   };
@@ -934,16 +934,16 @@ class ConditionalExpression : public Expression {
 };
 
 
-class NewExpression : public Expression {
+class ConstructExpression : public Expression {
  public:
   static auto Create(Identifier* class_name, ObjectInitializerPtr&& initializer) {
-    auto p = new NewExpression(class_name, std::move(initializer));
-    return std::unique_ptr<NewExpression>(p);
+    auto p = new ConstructExpression(class_name, std::move(initializer));
+    return std::unique_ptr<ConstructExpression>(p);
   }
 
  protected:
-  explicit NewExpression(Identifier* class_name, ObjectInitializerPtr&& initializer) :
-      Expression(Kind::kNew),
+  explicit ConstructExpression(Identifier* class_name, ObjectInitializerPtr&& initializer) :
+      Expression(Kind::kConstruct),
       class_name_(class_name),
       initializer_(std::move(initializer)),
       class_symbol_(nullptr) {}

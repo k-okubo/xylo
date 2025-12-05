@@ -47,7 +47,7 @@ class Verifier : public DiagnosticReporter {
   void VisitUnaryExpression(UnaryExpression* expr, FlowState* state);
   void VisitBinaryExpression(BinaryExpression* expr, FlowState* state);
   void VisitConditionalExpression(ConditionalExpression* expr, FlowState* state);
-  void VisitNewExpression(NewExpression* expr, FlowState* state);
+  void VisitConstructExpression(ConstructExpression* expr, FlowState* state);
   void VisitProjectionExpression(ProjectionExpression* expr, FlowState* state);
   void VisitBlockExpression(BlockExpression* expr, FlowState* state);
 

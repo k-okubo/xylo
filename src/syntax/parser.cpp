@@ -800,7 +800,7 @@ ExpressionPtr Parser::ParsePrimaryExpression(Scope* scope) {
       return ParseConditionalExpression(scope);
 
     case Token::kNew:
-      return ParseNewExpression(scope);
+      return ParseConstructExpression(scope);
 
     default:
       ErrorUnexpected();
@@ -833,7 +833,7 @@ ExpressionPtr Parser::ParseConditionalExpression(Scope* scope) {
 }
 
 
-ExpressionPtr Parser::ParseNewExpression(Scope* scope) {
+ExpressionPtr Parser::ParseConstructExpression(Scope* scope) {
   Expect(Token::kNew);
   Expect(Token::kIdentifier);
   auto class_name = LastTokenValue().as_identifier;
@@ -846,7 +846,7 @@ ExpressionPtr Parser::ParseNewExpression(Scope* scope) {
   }
 
   auto initializer = ParseObjectInitializer(scope);
-  auto expr = NewExpression::Create(class_name, std::move(initializer));
+  auto expr = ConstructExpression::Create(class_name, std::move(initializer));
   expr->set_position(ident_pos);
 
   return expr;

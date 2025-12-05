@@ -96,7 +96,7 @@ class Resolver : public DiagnosticReporter {
   void VisitUnaryExpression(UnaryExpression* expr, ResolutionContext* ctx);
   void VisitBinaryExpression(BinaryExpression* expr, ResolutionContext* ctx);
   void VisitConditionalExpression(ConditionalExpression* expr, ResolutionContext* ctx);
-  void VisitNewExpression(NewExpression* expr, ResolutionContext* ctx);
+  void VisitConstructExpression(ConstructExpression* expr, ResolutionContext* ctx);
   void VisitProjectionExpression(ProjectionExpression* expr, ResolutionContext* ctx);
   void VisitBlockExpression(BlockExpression* expr, ResolutionContext* ctx);
 

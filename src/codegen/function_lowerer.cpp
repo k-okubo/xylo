@@ -201,8 +201,8 @@ llvm::Value* FunctionLowerer::BuildExpression(Expression* expr) {
     case Expression::Kind::kConditional:
       return BuildConditionalExpression(expr->As<ConditionalExpression>());
 
-    case Expression::Kind::kNew:
-      return BuildNewExpression(expr->As<NewExpression>());
+    case Expression::Kind::kConstruct:
+      return BuildConstructExpression(expr->As<ConstructExpression>());
 
     case Expression::Kind::kProjection:
       return BuildProjectionExpression(expr->As<ProjectionExpression>(), nullptr);
@@ -773,7 +773,7 @@ llvm::Value* FunctionLowerer::BuildConditionalExpression(ConditionalExpression* 
 }
 
 
-llvm::Value* FunctionLowerer::BuildNewExpression(NewExpression* expr) {
+llvm::Value* FunctionLowerer::BuildConstructExpression(ConstructExpression* expr) {
   auto nominal_type = expr->type()->As<NominalType>();
   auto struct_type = GetOrCreateInstanceStruct(expr->class_symbol());
   auto ptr = BuildHeapAlloc(struct_type);

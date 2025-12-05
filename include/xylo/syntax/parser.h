@@ -54,7 +54,7 @@ class Parser : public DiagnosticReporter {
   ExpressionPtr ParsePrefixExpression(Scope* scope);
   ExpressionPtr ParsePrimaryExpression(Scope* scope);
   ExpressionPtr ParseConditionalExpression(Scope* scope);
-  ExpressionPtr ParseNewExpression(Scope* scope);
+  ExpressionPtr ParseConstructExpression(Scope* scope);
 
   ObjectInitializerPtr ParseObjectInitializer(Scope* scope);
   InitializerPtr ParseExpressionInitializer(Scope* scope);

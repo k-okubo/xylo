@@ -17,26 +17,26 @@ llvm::StructType* InterfaceLowerer::GetOrCreateVTableStruct() {
 
 
 llvm::StructType* InterfaceLowerer::CreateVTableStruct() {
+  // ensure vtable structs for superinterfaces are created
   for (auto& super : xylo_interface()->supers()) {
-    CodegenScope::GetOrCreateVTableStruct(super->symbol());
+    LoweringNode::GetOrCreateVTableStruct(super->symbol());
   }
 
   TypeConverter tc(xylo_context(), llvm_context());
-  auto nominal = xylo_interface()->symbol()->type()->As<NominalType>();
+  auto nominal = xylo_nominal();
 
   Vector<llvm::Type*> vtable_entries;
   vtable_entries.push_back(tc.PointerType());  // dummy entry
 
   for (auto super : nominal->supers()) {
-    vtable_entries.push_back(root()->GetInterfaceLowerer(super)->GetOrCreateVTableStruct());
+    vtable_entries.push_back(GetVTableStruct(super));
   }
 
   for (auto method : nominal->methods()) {
     vtable_entries.push_back(tc.Convert(method->type(), true));
   }
 
-  auto name = llvm::StringRef(interface_name().data(), interface_name().size());
-  return llvm::StructType::create(llvm_context(), tc.ToArrayRef(vtable_entries), name);
+  return llvm::StructType::create(llvm_context(), tc.ToArrayRef(vtable_entries), tc.ToStringRef(interface_name_));
 }
 
 

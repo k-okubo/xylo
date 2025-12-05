@@ -2,7 +2,6 @@
 #ifndef XYLO_CODEGEN_TYPE_CONVERTER_H_
 #define XYLO_CODEGEN_TYPE_CONVERTER_H_
 
-#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Type.h>
 
 #include "xylo/syntax/context.h"
@@ -28,6 +27,11 @@ class TypeConverter {
   template <typename T>
   static llvm::ArrayRef<T> ToArrayRef(const xylo::Vector<T>& vec) {
     return llvm::ArrayRef<T>(vec.data(), vec.size());
+  }
+
+  template <typename T>
+  static llvm::StringRef ToStringRef(const T& str) {
+    return llvm::StringRef(str.data(), str.size());
   }
 
  private:

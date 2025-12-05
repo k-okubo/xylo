@@ -1,17 +1,19 @@
 
-#ifndef XYLO_CODEGEN_MODULE_LOWERER_H_
-#define XYLO_CODEGEN_MODULE_LOWERER_H_
+#ifndef XYLO_CODEGEN_PROGRAM_LOWERER_H_
+#define XYLO_CODEGEN_PROGRAM_LOWERER_H_
 
-#include "xylo/codegen/codegen_scope.h"
+#include <llvm/IR/Module.h>
+
+#include "xylo/codegen/lowering_node.h"
 #include "xylo/syntax/context.h"
 
 namespace xylo {
 
 
-class ModuleLowerer : public CodegenScope {
+class ProgramLowerer : public LoweringNode {
  public:
-  ModuleLowerer(XyloContext* xylo_context, llvm::Module* llvm_module) :
-      CodegenScope(Kind::kModule, this),
+  ProgramLowerer(XyloContext* xylo_context, llvm::Module* llvm_module) :
+      LoweringNode(Kind::kProgram, this),
       xylo_context_(xylo_context),
       llvm_module_(llvm_module),
       closure_ptr_type_(nullptr),
@@ -20,7 +22,7 @@ class ModuleLowerer : public CodegenScope {
       interface_lowerers_(),
       class_lowerers_() {}
 
-  ~ModuleLowerer() = default;
+  ~ProgramLowerer() = default;
 
   XyloContext* xylo_context() const { return xylo_context_; }
   llvm::Module* llvm_module() const { return llvm_module_; }
@@ -63,4 +65,4 @@ class ModuleLowerer : public CodegenScope {
 
 }  // namespace xylo
 
-#endif  // XYLO_CODEGEN_MODULE_LOWERER_H_
+#endif  // XYLO_CODEGEN_PROGRAM_LOWERER_H_

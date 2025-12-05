@@ -1,13 +1,10 @@
 
-#include "xylo/codegen/codegen_scope.h"
-
-#include <format>
+#include "xylo/codegen/lowering_node.h"
 
 #include "xylo/codegen/class_lowerer.h"
 #include "xylo/codegen/function_lowerer.h"
 #include "xylo/codegen/interface_lowerer.h"
 #include "xylo/codegen/type_converter.h"
-#include "xylo/util/contract.h"
 
 namespace xylo {
 
@@ -85,7 +82,7 @@ static HString TypeArgsKey(const Vector<Type*>& type_args, XyloContext* context)
 }
 
 
-static String ChildMangledName(CodegenScope* parent, Symbol* symbol, const HString& type_args_key) {
+static String ChildMangledName(LoweringNode* parent, Symbol* symbol, const HString& type_args_key) {
   String mangled;
 
   mangled += parent->mangled_name();
@@ -102,41 +99,56 @@ static String ChildMangledName(CodegenScope* parent, Symbol* symbol, const HStri
 }
 
 
-void CodegenScope::RegisterDeclaration(Declaration* decl) {
+void LoweringNode::RegisterDeclaration(Declaration* decl) {
   switch (decl->kind()) {
     case Declaration::Kind::kInterface:
-      RegisterInterface(decl->As<InterfaceDeclaration>());
+      RegisterInterfaceDecl(decl->As<InterfaceDeclaration>());
       break;
 
     case Declaration::Kind::kClass:
-      RegisterClass(decl->As<ClassDeclaration>());
+      RegisterClassDecl(decl->As<ClassDeclaration>());
       break;
 
     case Declaration::Kind::kFunction:
-      RegisterFunction(decl->As<FunctionDeclaration>());
+      RegisterFunctionDecl(decl->As<FunctionDeclaration>());
       break;
   }
 }
 
 
-void CodegenScope::RegisterInterface(InterfaceDeclaration* interface_decl) {
+void LoweringNode::RegisterInterfaceDecl(InterfaceDeclaration* interface_decl) {
   xylo_contract(interface_decl->symbol()->type()->kind() == Type::Kind::kNominal);
   interface_decls_.emplace(interface_decl->symbol(), interface_decl);
 }
 
 
-void CodegenScope::RegisterClass(ClassDeclaration* class_decl) {
+void LoweringNode::RegisterClassDecl(ClassDeclaration* class_decl) {
   xylo_contract(class_decl->symbol()->type()->kind() == Type::Kind::kNominal);
   class_decls_.emplace(class_decl->symbol(), class_decl);
 }
 
 
-void CodegenScope::RegisterFunction(FunctionDeclaration* func_decl) {
+void LoweringNode::RegisterFunctionDecl(FunctionDeclaration* func_decl) {
   func_decls_.emplace(func_decl->symbol(), func_decl);
 }
 
 
-llvm::StructType* CodegenScope::GetOrCreateVTableStruct(Symbol* symbol) {
+FunctionExpression* LoweringNode::GetXyloFunction(Symbol* symbol) {
+  xylo_contract(symbol->kind() == Symbol::Kind::kFunction);
+
+  // check scope
+  auto decl_it = func_decls_.find(symbol);
+  if (decl_it == func_decls_.end()) {
+    xylo_contract(parent_ != nullptr);
+    return parent_->GetXyloFunction(symbol);
+  }
+
+  // look up function declaration
+  return decl_it->second->func();
+}
+
+
+llvm::StructType* LoweringNode::GetOrCreateVTableStruct(Symbol* symbol) {
   xylo_contract(symbol->kind() == Symbol::Kind::kClass);
 
   auto interface_type = symbol->type()->As<NominalType>();
@@ -167,7 +179,7 @@ llvm::StructType* CodegenScope::GetOrCreateVTableStruct(Symbol* symbol) {
 }
 
 
-llvm::StructType* CodegenScope::GetOrCreateInstanceStruct(Symbol* symbol) {
+llvm::StructType* LoweringNode::GetOrCreateInstanceStruct(Symbol* symbol) {
   xylo_contract(symbol->kind() == Symbol::Kind::kClass);
 
   auto class_type = symbol->type()->As<NominalType>();
@@ -198,22 +210,12 @@ llvm::StructType* CodegenScope::GetOrCreateInstanceStruct(Symbol* symbol) {
 }
 
 
-FunctionExpression* CodegenScope::GetXyloFunction(Symbol* symbol) {
-  xylo_contract(symbol->kind() == Symbol::Kind::kFunction);
-
-  // check scope
-  auto decl_it = func_decls_.find(symbol);
-  if (decl_it == func_decls_.end()) {
-    xylo_contract(parent_ != nullptr);
-    return parent_->GetXyloFunction(symbol);
-  }
-
-  // look up function declaration
-  return decl_it->second->func();
+llvm::Function* LoweringNode::GetOrBuildMethod(xylo::NominalType* type, Identifier* name, const TypeVec& type_args) {
+  return root()->GetClassLowerer(type)->GetOrBuildMethod(name, type_args);
 }
 
 
-llvm::Function* CodegenScope::GetOrBuildFunction(Symbol* symbol, const Vector<Type*>& type_args) {
+llvm::Function* LoweringNode::GetOrBuildFunction(Symbol* symbol, const TypeVec& type_args) {
   xylo_contract(symbol->kind() == Symbol::Kind::kFunction);
 
   // check scope
@@ -237,11 +239,11 @@ llvm::Function* CodegenScope::GetOrBuildFunction(Symbol* symbol, const Vector<Ty
 
   // build
   auto func_lowerer = sfunc_it->second;
-  return func_lowerer->GetOrBuild();
+  return func_lowerer->GetOrBuildFunction();
 }
 
 
-SubstitutionPtr CodegenScope::ExtendTypeEnv(FunctionDeclaration* func_decl, const Vector<Type*>& type_args) {
+SubstitutionPtr LoweringNode::ExtendTypeEnv(FunctionDeclaration* func_decl, const TypeVec& type_args) {
   auto ext_env = std::make_unique<Substitution>(type_env());
 
   auto decl_type = func_decl->symbol()->type();
@@ -258,6 +260,16 @@ SubstitutionPtr CodegenScope::ExtendTypeEnv(FunctionDeclaration* func_decl, cons
   }
 
   return ext_env;
+}
+
+
+llvm::StructType* LoweringNode::GetVTableStruct(xylo::NominalType* type) {
+  return root()->GetInterfaceLowerer(type)->GetOrCreateVTableStruct();
+}
+
+
+llvm::StructType* LoweringNode::GetInstanceStruct(xylo::NominalType* type) {
+  return root()->GetClassLowerer(type)->GetOrCreateInstanceStruct();
 }
 
 

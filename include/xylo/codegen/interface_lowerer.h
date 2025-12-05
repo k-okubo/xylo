@@ -4,17 +4,15 @@
 
 #include <utility>
 
-#include "xylo/codegen/codegen_scope.h"
-#include "xylo/codegen/module_lowerer.h"
-#include "xylo/syntax/ast.h"
+#include "xylo/codegen/declaration_lowerer.h"
 
 namespace xylo {
 
 
-class InterfaceLowerer : public CodegenScope {
+class InterfaceLowerer : public DeclarationLowerer {
  public:
-  InterfaceLowerer(CodegenScope* parent, SubstitutionPtr&& type_env, InterfaceDeclaration* interface_decl) :
-      CodegenScope(Kind::kInterface, parent, std::move(type_env)),
+  InterfaceLowerer(LoweringNode* parent, SubstitutionPtr&& type_env, InterfaceDeclaration* interface_decl) :
+      DeclarationLowerer(Kind::kInterface, parent, std::move(type_env)),
       interface_decl_(interface_decl),
       interface_name_(),
       llvm_struct_(nullptr) {}
@@ -26,12 +24,9 @@ class InterfaceLowerer : public CodegenScope {
   const String& interface_name() const { return interface_name_; }
   void set_interface_name(String&& name) { interface_name_ = std::move(name); }
 
-  XyloContext* xylo_context() const { return root()->xylo_context(); }
-  llvm::LLVMContext& llvm_context() const { return root()->llvm_context(); }
-
   const String& mangled_name() const override { return interface_name_; }
-  int scope_depth() const override { return xylo_interface()->scope()->depth(); }
-  llvm::StructType* scope_data_type() const override { return nullptr; }
+  int scope_depth() const override { xylo_unreachable(); }
+  llvm::StructType* scope_data_type() const override { xylo_unreachable(); }
 
   llvm::StructType* GetOrCreateVTableStruct();
 

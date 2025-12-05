@@ -679,6 +679,8 @@ static Type* FindOriginOwner(NominalType* owner, Identifier* member_name, Member
       return result;
     }
   }
+
+  xylo_unreachable();
 }
 
 

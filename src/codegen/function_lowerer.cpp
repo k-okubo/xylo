@@ -1,25 +1,25 @@
 
 #include "xylo/codegen/function_lowerer.h"
 
-#include "xylo/codegen/pointer_adjuster.h"
+#include "xylo/codegen/building_util.h"
+#include "xylo/codegen/class_lowerer.h"
 #include "xylo/codegen/type_converter.h"
-#include "xylo/util/vector.h"
 
 namespace xylo {
 
 
-llvm::Function* FunctionLowerer::GetOrBuild() {
+llvm::Function* FunctionLowerer::GetOrBuildFunction() {
   if (llvm_func_ != nullptr) {
     return llvm_func_;
   }
 
-  llvm_func_ = BuildPrototype();
+  llvm_func_ = CreatePrototype();
   BuildBody(llvm_func_);
   return llvm_func_;
 }
 
 
-llvm::Function* FunctionLowerer::BuildPrototype() {
+llvm::Function* FunctionLowerer::CreatePrototype() {
   auto func_type = llvm::dyn_cast<llvm::FunctionType>(ZonkAndConvert(xylo_func()->type(), false));
   xylo_contract(func_type != nullptr);
   auto name = llvm::StringRef(func_name().data(), func_name().size());
@@ -36,7 +36,7 @@ void FunctionLowerer::BuildBody(llvm::Function* function) {
 
   // closure environment parameter
   auto env_value = function->getArg(0);
-  env_value->setName(parent()->kind() == CodegenScope::Kind::kClass ? "this" : "__env");
+  env_value->setName(parent()->kind() == LoweringNode::Kind::kClass ? "this" : "__env");
   set_closure_env_ptr(env_value);
 
   // build heap frame
@@ -111,6 +111,8 @@ llvm::Value* FunctionLowerer::BuildStatement(Statement* stmt) {
     case Statement::Kind::kReturn:
       return BuildReturnStatement(stmt->As<ReturnStatement>());
   }
+
+  xylo_unreachable();
 }
 
 
@@ -329,13 +331,13 @@ llvm::Value* FunctionLowerer::BuildLocalValueIdentifier(IdentifierExpression* ex
 llvm::Value* FunctionLowerer::BuildFunctionIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env) {
   auto symbol = expr->symbol();
 
-  Vector<Type*> type_args;
+  TypeVec type_args;
   TypeSink allocated;
 
   for (auto var : expr->instantiated_vars()) {
     type_args.push_back(var->Zonk(type_env(), false, &allocated));
   }
-  auto llvm_func = GetOrBuildFunction(symbol, type_args);
+  auto llvm_func = LoweringNode::GetOrBuildFunction(symbol, type_args);
   auto xylo_func = GetXyloFunction(symbol);
 
   if (xylo_func->is_closure()) {
@@ -364,7 +366,7 @@ llvm::Value* FunctionLowerer::BuildFunctionExpression(FunctionExpression* expr) 
   auto ext_env = std::make_unique<Substitution>(type_env());
   auto nested_lowerer = new FunctionLowerer(this, std::move(ext_env), expr);
   nested_lowerer->set_func_name(String("anon"));
-  auto llvm_func = nested_lowerer->GetOrBuild();
+  auto llvm_func = nested_lowerer->GetOrBuildFunction();
 
   if (expr->is_closure()) {
     return BuildClosurePointer(llvm_func, heap_frame_ptr());
@@ -417,25 +419,22 @@ llvm::Value* FunctionLowerer::BuildApplyExpression(ApplyExpression* expr) {
   xylo_contract(llvm_func_type != nullptr);
 
   if (closure_env_ptr != nullptr) {
-    return builder_.CreateCall(llvm_func_type, func_value, TypeConverter::ToArrayRef(arg_values));
+    return builder_.CreateCall(llvm_func_type, func_value, tc.ToArrayRef(arg_values));
   }
 
   if (xylo_func_type->is_closure()) {
     // extract function and environment from closure
     auto closure_ptr = func_value;
-    auto ptr_type = llvm::PointerType::getUnqual(llvm_context());
-
-    auto func_ptr_field = builder_.CreateStructGEP(closure_ptr_type(), closure_ptr, 0);
-    func_value = builder_.CreateLoad(ptr_type, func_ptr_field);
-
-    auto env_ptr_field = builder_.CreateStructGEP(closure_ptr_type(), closure_ptr, 1);
-    auto env_ptr = builder_.CreateLoad(ptr_type, env_ptr_field);
+    auto func_ptr = LoadFunctionPtrFromClosurePointer(closure_ptr);
+    auto env_ptr = LoadEnvironmentPtrFromClosurePointer(closure_ptr);
+    func_value = func_ptr;
     arg_values[0] = env_ptr;
+
   } else {
     arg_values[0] = null_ptr();
   }
 
-  return builder_.CreateCall(llvm_func_type, func_value, TypeConverter::ToArrayRef(arg_values));
+  return builder_.CreateCall(llvm_func_type, func_value, tc.ToArrayRef(arg_values));
 }
 
 
@@ -796,7 +795,7 @@ void FunctionLowerer::BuildObjectInitializer(ObjectInitializer* init, xylo::Nomi
   auto class_lowerer = root()->GetClassLowerer(obj_type);
   xylo_contract(class_lowerer != nullptr);
 
-  auto class_symbol = class_lowerer->class_symbol();
+  auto class_symbol = class_lowerer->xylo_class()->symbol();
   auto struct_type = class_lowerer->GetOrCreateInstanceStruct();
 
   // store closure environment pointer
@@ -853,11 +852,11 @@ llvm::Value* FunctionLowerer::BuildClassProjection(ProjectionExpression* expr, N
   xylo_contract(!member_path.empty());
   auto member_info = member_path[0];
 
-  PointerAdjuster pa(&builder_);
+  BuildingUtil bu(&builder_);
 
   switch (member_info->kind()) {
     case MemberInfo::Kind::kField: {
-      auto field_ptr = pa.StructFieldPtr(instance_struct, object_ptr, member_path);
+      auto field_ptr = bu.MemberPtr(instance_struct, object_ptr, member_path);
 
       if (expr->is_lvalue()) {
         return field_ptr;
@@ -868,18 +867,18 @@ llvm::Value* FunctionLowerer::BuildClassProjection(ProjectionExpression* expr, N
     }
 
     case MemberInfo::Kind::kEmbedding:
-      return pa.StructFieldPtr(instance_struct, object_ptr, member_path);
+      return bu.MemberPtr(instance_struct, object_ptr, member_path);
 
     case MemberInfo::Kind::kMethod: {
       TypeSink allocated;
-      Vector<Type*> type_args;
+      TypeVec type_args;
       for (auto var : expr->member_req()->instantiated_vars()) {
         type_args.push_back(var->Zonk(type_env(), false, &allocated));
       }
       auto llvm_func = GetOrBuildMethod(member_info->owner(), expr->member_name(), type_args);
 
       // load method's owner pointer
-      object_ptr = pa.StructFieldPtr(instance_struct, object_ptr, member_path, 1);
+      object_ptr = bu.MemberPtr(instance_struct, object_ptr, member_path, 1);  // skip method slot
 
       if (out_closure_env != nullptr) {
         // return func and object pointer as env
@@ -910,14 +909,11 @@ llvm::Value* FunctionLowerer::BuildInterfaceProjection(ProjectionExpression* exp
   xylo_contract(member_path[0]->kind() == MemberInfo::Kind::kMethod);
 
   TypeConverter tc(xylo_context(), llvm_context());
-  auto object_ptr_field = builder_.CreateStructGEP(interface_ptr_type(), interface_ptr, 0);
-  auto object_ptr = builder_.CreateLoad(tc.PointerType(), object_ptr_field);
+  auto object_ptr = LoadObjectPtrFromInterfacePointer(interface_ptr);
+  auto vtable_ptr = LoadVTablePtrFromInterfacePointer(interface_ptr);
 
-  auto vtable_ptr_field = builder_.CreateStructGEP(interface_ptr_type(), interface_ptr, 1);
-  auto vtable_ptr = builder_.CreateLoad(tc.PointerType(), vtable_ptr_field);
-
-  PointerAdjuster pa(&builder_);
-  auto func_ptr_field = pa.StructFieldPtr(vtable_struct, vtable_ptr, member_path);
+  BuildingUtil bu(&builder_);
+  auto func_ptr_field = bu.MemberPtr(vtable_struct, vtable_ptr, member_path);
   auto func_ptr = builder_.CreateLoad(tc.PointerType(), func_ptr_field);
 
   if (out_closure_env != nullptr) {
@@ -987,20 +983,14 @@ llvm::Value* FunctionLowerer::AdjustType(llvm::Value* value, xylo::Type* zonked_
     } else {
       // from_nominal is an interface; load object and vtable pointers from `value`
       xylo_contract(from_nominal->category() == NominalType::Category::kInterface);
-      TypeConverter tc(xylo_context(), llvm_context());
-
-      auto object_ptr_field = builder_.CreateStructGEP(interface_ptr_type(), value, 0);
-      object_ptr = builder_.CreateLoad(tc.PointerType(), object_ptr_field);
-
-      auto vtable_ptr_field = builder_.CreateStructGEP(interface_ptr_type(), value, 1);
-      vtable_ptr = builder_.CreateLoad(tc.PointerType(), vtable_ptr_field);
-
+      object_ptr = LoadObjectPtrFromInterfacePointer(value);
+      vtable_ptr = LoadVTablePtrFromInterfacePointer(value);
       vtable_struct = GetVTableStruct(from_nominal);
     }
 
     // build interface pointer with adjusted vtable
-    PointerAdjuster pa(&builder_);
-    vtable_ptr = pa.StructFieldPtr(vtable_struct, vtable_ptr, super_path);
+    BuildingUtil bu(&builder_);
+    vtable_ptr = bu.MemberPtr(vtable_struct, vtable_ptr, super_path);
     return BuildInterfacePointer(object_ptr, vtable_ptr);
   }
 
@@ -1076,7 +1066,7 @@ llvm::Value* FunctionLowerer::LoadThisPointer() {
   auto env_ptr = this->closure_env_ptr();
   auto env_type = lowerer->scope_data_type();
 
-  while (lowerer->kind() != CodegenScope::Kind::kClass) {
+  while (lowerer->kind() != LoweringNode::Kind::kClass) {
     auto parent_ptr_ptr = builder_.CreateStructGEP(env_type, env_ptr, 0);
     auto parent_ptr = builder_.CreateLoad(env_type->getElementType(0), parent_ptr_ptr);
 
@@ -1090,7 +1080,7 @@ llvm::Value* FunctionLowerer::LoadThisPointer() {
 
 
 std::pair<llvm::Value*, llvm::StructType*> FunctionLowerer::LoadClosureEnvironmentPtr(Symbol* symbol) {
-  CodegenScope* lowerer;
+  LoweringNode* lowerer;
   llvm::Value* env_ptr;
   llvm::StructType* env_type;
 
@@ -1140,6 +1130,19 @@ llvm::Value* FunctionLowerer::BuildClosurePointer(llvm::Value* function, llvm::V
   return closure_ptr;
 }
 
+llvm::Value* FunctionLowerer::LoadFunctionPtrFromClosurePointer(llvm::Value* closure_ptr) {
+  auto closure_ty = closure_ptr_type();
+  auto func_ptr_field = builder_.CreateStructGEP(closure_ty, closure_ptr, 0);
+  return builder_.CreateLoad(closure_ty->getElementType(0), func_ptr_field);
+}
+
+
+llvm::Value* FunctionLowerer::LoadEnvironmentPtrFromClosurePointer(llvm::Value* closure_ptr) {
+  auto closure_ty = closure_ptr_type();
+  auto env_ptr_field = builder_.CreateStructGEP(closure_ty, closure_ptr, 1);
+  return builder_.CreateLoad(closure_ty->getElementType(1), env_ptr_field);
+}
+
 
 llvm::Value* FunctionLowerer::BuildInterfacePointer(llvm::Value* obj_ptr, llvm::Value* vtable_ptr) {
   auto interface_ty = interface_ptr_type();
@@ -1152,6 +1155,19 @@ llvm::Value* FunctionLowerer::BuildInterfacePointer(llvm::Value* obj_ptr, llvm::
   builder_.CreateStore(vtable_ptr, vtable_ptr_field);
 
   return interface_ptr;
+}
+
+
+llvm::Value* FunctionLowerer::LoadObjectPtrFromInterfacePointer(llvm::Value* interface_ptr) {
+  auto interface_ty = interface_ptr_type();
+  auto obj_ptr_field = builder_.CreateStructGEP(interface_ty, interface_ptr, 0);
+  return builder_.CreateLoad(interface_ty->getElementType(0), obj_ptr_field);
+}
+
+llvm::Value* FunctionLowerer::LoadVTablePtrFromInterfacePointer(llvm::Value* interface_ptr) {
+  auto interface_ty = interface_ptr_type();
+  auto vtable_ptr_field = builder_.CreateStructGEP(interface_ty, interface_ptr, 1);
+  return builder_.CreateLoad(interface_ty->getElementType(1), vtable_ptr_field);
 }
 
 

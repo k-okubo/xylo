@@ -3,26 +3,18 @@
 #define XYLO_CODEGEN_FUNCTION_LOWERER_H_
 
 #include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/LLVMContext.h>
 
 #include <utility>
 
-#include "xylo/codegen/class_lowerer.h"
-#include "xylo/codegen/codegen_scope.h"
-#include "xylo/codegen/interface_lowerer.h"
-#include "xylo/codegen/module_lowerer.h"
-#include "xylo/syntax/ast.h"
-#include "xylo/syntax/context.h"
-#include "xylo/syntax/type.h"
-#include "xylo/util/map.h"
+#include "xylo/codegen/declaration_lowerer.h"
 
 namespace xylo {
 
 
-class FunctionLowerer : public CodegenScope {
+class FunctionLowerer : public DeclarationLowerer {
  public:
-  FunctionLowerer(CodegenScope* parent, SubstitutionPtr&& type_env, FunctionExpression* xylo_func) :
-      CodegenScope(Kind::kFunction, parent, std::move(type_env)),
+  FunctionLowerer(LoweringNode* parent, SubstitutionPtr&& type_env, FunctionExpression* xylo_func) :
+      DeclarationLowerer(Kind::kFunction, parent, std::move(type_env)),
       xylo_func_(xylo_func),
       func_name_(),
       llvm_func_(nullptr),
@@ -38,22 +30,12 @@ class FunctionLowerer : public CodegenScope {
   const String& func_name() const { return func_name_; }
   void set_func_name(String&& name) { func_name_ = std::move(name); }
 
-  XyloContext* xylo_context() const { return root()->xylo_context(); }
-  llvm::Module* llvm_module() const { return root()->llvm_module(); }
-  llvm::LLVMContext& llvm_context() const { return root()->llvm_context(); }
-
-  llvm::IntegerType* size_type() const { return root()->size_type(); }
-  llvm::StructType* closure_ptr_type() const { return root()->closure_ptr_type(); }
-  llvm::StructType* interface_ptr_type() const { return root()->interface_ptr_type(); }
-  llvm::Function* xylo_malloc() const { return root()->xylo_malloc(); }
-  llvm::Value* null_ptr() const { return llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(llvm_context())); }
-
   const String& mangled_name() const override { return func_name_; }
   int scope_depth() const override { return xylo_func()->scope()->depth(); }
   llvm::StructType* scope_data_type() const override { return heap_frame_type(); }
 
-  llvm::Function* GetOrBuild();
-  llvm::Function* BuildPrototype();
+  llvm::Function* GetOrBuildFunction();
+  llvm::Function* CreatePrototype();
   void BuildBody(llvm::Function* function);
 
  protected:
@@ -103,18 +85,7 @@ class FunctionLowerer : public CodegenScope {
   llvm::StructType* heap_frame_type() const { return heap_frame_type_; }
   void set_heap_frame_type(llvm::StructType* type) { heap_frame_type_ = type; }
 
-  llvm::StructType* GetVTableStruct(xylo::NominalType* type) {
-    return root()->GetInterfaceLowerer(type)->GetOrCreateVTableStruct();
-  }
-
-  llvm::StructType* GetInstanceStruct(xylo::NominalType* type) {
-    return root()->GetClassLowerer(type)->GetOrCreateInstanceStruct();
-  }
-
-  llvm::Function* GetOrBuildMethod(xylo::NominalType* type, Identifier* method_name,
-                                   const Vector<xylo::Type*>& type_args) {
-    return root()->GetClassLowerer(type)->GetOrBuildMethod(method_name, type_args);
-  }
+  llvm::Value* null_ptr() const { return llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(llvm_context())); }
 
   llvm::Value* BuildHeapAlloc(llvm::Type* type);
   llvm::Value* StoreCapturedValue(Symbol* symbol, llvm::Value* value);
@@ -122,8 +93,14 @@ class FunctionLowerer : public CodegenScope {
   llvm::Value* LoadThisPointer();
   std::pair<llvm::Value*, llvm::StructType*> LoadClosureEnvironmentPtr(Symbol* symbol);
   std::pair<llvm::Value*, llvm::Type*> LoadClosureEnvironmentValuePtr(Symbol* symbol);
+
   llvm::Value* BuildClosurePointer(llvm::Value* function, llvm::Value* env_ptr);
+  llvm::Value* LoadFunctionPtrFromClosurePointer(llvm::Value* closure_ptr);
+  llvm::Value* LoadEnvironmentPtrFromClosurePointer(llvm::Value* closure_ptr);
+
   llvm::Value* BuildInterfacePointer(llvm::Value* obj_ptr, llvm::Value* vtable_ptr);
+  llvm::Value* LoadObjectPtrFromInterfacePointer(llvm::Value* interface_ptr);
+  llvm::Value* LoadVTablePtrFromInterfacePointer(llvm::Value* interface_ptr);
 
  private:
   FunctionExpression* xylo_func_;

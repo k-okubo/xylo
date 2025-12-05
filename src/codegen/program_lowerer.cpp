@@ -1,5 +1,5 @@
 
-#include "xylo/codegen/module_lowerer.h"
+#include "xylo/codegen/program_lowerer.h"
 
 #include <llvm/IR/IRBuilder.h>
 
@@ -8,14 +8,15 @@
 namespace xylo {
 
 
-void ModuleLowerer::RegisterTopLevelDecls(FileAST* file_ast) {
+void ProgramLowerer::RegisterTopLevelDecls(FileAST* file_ast) {
   for (auto& decl : file_ast->declarations()) {
     RegisterDeclaration(decl.get());
   }
 }
 
 
-void ModuleLowerer::BuildEntryPoint(const llvm::Twine& name, Symbol* main_symbol, const Vector<Type*>& main_type_args) {
+void ProgramLowerer::BuildEntryPoint(const llvm::Twine& name, Symbol* main_symbol,
+                                     const Vector<Type*>& main_type_args) {
   std::vector<llvm::Type*> param_types;
   auto entry_type = llvm::FunctionType::get(llvm::IntegerType::getInt64Ty(llvm_context()), param_types, false);
   auto entry_func = llvm::Function::Create(entry_type, llvm::Function::ExternalLinkage, name, llvm_module());
@@ -37,12 +38,12 @@ void ModuleLowerer::BuildEntryPoint(const llvm::Twine& name, Symbol* main_symbol
 }
 
 
-void ModuleLowerer::RegisterInterfaceLowerer(NominalType* type, InterfaceLowerer* lowerer) {
+void ProgramLowerer::RegisterInterfaceLowerer(NominalType* type, InterfaceLowerer* lowerer) {
   interface_lowerers_.emplace(type, lowerer);
 }
 
 
-InterfaceLowerer* ModuleLowerer::GetInterfaceLowerer(NominalType* type) {
+InterfaceLowerer* ProgramLowerer::GetInterfaceLowerer(NominalType* type) {
   auto it = interface_lowerers_.find(type);
   if (it != interface_lowerers_.end()) {
     return it->second;
@@ -52,12 +53,12 @@ InterfaceLowerer* ModuleLowerer::GetInterfaceLowerer(NominalType* type) {
 }
 
 
-void ModuleLowerer::RegisterClassLowerer(NominalType* type, ClassLowerer* lowerer) {
+void ProgramLowerer::RegisterClassLowerer(NominalType* type, ClassLowerer* lowerer) {
   class_lowerers_.emplace(type, lowerer);
 }
 
 
-ClassLowerer* ModuleLowerer::GetClassLowerer(NominalType* type) {
+ClassLowerer* ProgramLowerer::GetClassLowerer(NominalType* type) {
   auto it = class_lowerers_.find(type);
   if (it != class_lowerers_.end()) {
     return it->second;
@@ -67,13 +68,13 @@ ClassLowerer* ModuleLowerer::GetClassLowerer(NominalType* type) {
 }
 
 
-llvm::IntegerType* ModuleLowerer::size_type() {
+llvm::IntegerType* ProgramLowerer::size_type() {
   const auto& DL = llvm_module()->getDataLayout();
   return llvm::IntegerType::get(llvm_context(), DL.getPointerSizeInBits());
 }
 
 
-llvm::StructType* ModuleLowerer::closure_ptr_type() {
+llvm::StructType* ProgramLowerer::closure_ptr_type() {
   if (closure_ptr_type_ != nullptr) {
     return closure_ptr_type_;
   }
@@ -84,7 +85,7 @@ llvm::StructType* ModuleLowerer::closure_ptr_type() {
 }
 
 
-llvm::StructType* ModuleLowerer::interface_ptr_type() {
+llvm::StructType* ProgramLowerer::interface_ptr_type() {
   if (interface_ptr_type_ != nullptr) {
     return interface_ptr_type_;
   }
@@ -95,7 +96,7 @@ llvm::StructType* ModuleLowerer::interface_ptr_type() {
 }
 
 
-llvm::Function* ModuleLowerer::xylo_malloc() {
+llvm::Function* ProgramLowerer::xylo_malloc() {
   if (xylo_malloc_ != nullptr) {
     return xylo_malloc_;
   }

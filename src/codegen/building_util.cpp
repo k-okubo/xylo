@@ -1,13 +1,13 @@
 
-#include "xylo/codegen/pointer_adjuster.h"
+#include "xylo/codegen/building_util.h"
 
 #include "xylo/codegen/type_converter.h"
 
 namespace xylo {
 
 
-llvm::Value* PointerAdjuster::StructFieldPtr(llvm::StructType* type, llvm::Value* ptr, const Vector<NominalSlot*>& path,
-                                             int skip) {
+llvm::Value* BuildingUtil::MemberPtr(llvm::StructType* type, llvm::Value* ptr, const SlotVec& path, int skip) {
+  xylo_contract(skip >= 0);
   if (static_cast<int>(path.size()) <= skip) {
     return ptr;
   }

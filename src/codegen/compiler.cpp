@@ -11,7 +11,7 @@
 
 #include <cstddef>
 
-#include "xylo/codegen/module_lowerer.h"
+#include "xylo/codegen/program_lowerer.h"
 #include "xylo/runtime/memory.h"
 
 
@@ -101,8 +101,8 @@ EntryPoint Compiler::Compile(FileAST* file_ast, bool print_module) {
   module->setTargetTriple(jit->getTargetTriple().str());
 
   // prepare lowerer
-  ModuleLowerer module_lowerer(xylo_context_, module.get());
-  module_lowerer.RegisterTopLevelDecls(file_ast);
+  ProgramLowerer program_lowerer(xylo_context_, module.get());
+  program_lowerer.RegisterTopLevelDecls(file_ast);
 
   // build entry point
   auto main_symbol = FindMainSymbol(file_ast);
@@ -113,7 +113,7 @@ EntryPoint Compiler::Compile(FileAST* file_ast, bool print_module) {
   if (!CreateMainTypeArgs(main_symbol, &main_type_args)) {
     return nullptr;
   }
-  module_lowerer.BuildEntryPoint(kEntryPointName, main_symbol, main_type_args);
+  program_lowerer.BuildEntryPoint(kEntryPointName, main_symbol, main_type_args);
 
   // optimize
   if (false) {

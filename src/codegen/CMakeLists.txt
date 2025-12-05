@@ -1,10 +1,10 @@
 add_library(xylo_codegen STATIC
+  building_util.cpp
   class_lowerer.cpp
-  codegen_scope.cpp
   compiler.cpp
   function_lowerer.cpp
   interface_lowerer.cpp
-  module_lowerer.cpp
-  pointer_adjuster.cpp
+  lowering_node.cpp
+  program_lowerer.cpp
   type_converter.cpp
 )

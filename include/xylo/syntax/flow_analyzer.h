@@ -1,6 +1,6 @@
 
-#ifndef XYLO_SYNTAX_VERIFIER_H_
-#define XYLO_SYNTAX_VERIFIER_H_
+#ifndef XYLO_SYNTAX_FLOW_ANALYZER_H_
+#define XYLO_SYNTAX_FLOW_ANALYZER_H_
 
 #include "xylo/syntax/ast.h"
 #include "xylo/syntax/context.h"
@@ -9,16 +9,16 @@
 namespace xylo {
 
 
-class Verifier : public DiagnosticReporter {
+class FlowAnalyzer : public DiagnosticReporter {
  public:
-  explicit Verifier(XyloContext* context) :
+  explicit FlowAnalyzer(XyloContext* context) :
       DiagnosticReporter(),
       context_(context) {}
 
-  ~Verifier() = default;
+  ~FlowAnalyzer() = default;
 
-  Verifier(const Verifier&) = delete;
-  Verifier& operator=(const Verifier&) = delete;
+  FlowAnalyzer(const FlowAnalyzer&) = delete;
+  FlowAnalyzer& operator=(const FlowAnalyzer&) = delete;
 
   void VisitFileAST(FileAST* file_ast);
 
@@ -62,4 +62,4 @@ class Verifier : public DiagnosticReporter {
 
 }  // namespace xylo
 
-#endif  // XYLO_SYNTAX_VERIFIER_H_
+#endif  // XYLO_SYNTAX_FLOW_ANALYZER_H_

@@ -4,11 +4,11 @@
 
 #include "xylo/codegen/compiler.h"
 #include "xylo/syntax/context.h"
+#include "xylo/syntax/flow_analyzer.h"
 #include "xylo/syntax/inferencer.h"
 #include "xylo/syntax/lexer.h"
 #include "xylo/syntax/parser.h"
 #include "xylo/syntax/resolver.h"
-#include "xylo/syntax/verifier.h"
 
 
 namespace xylo {
@@ -28,9 +28,9 @@ FileASTPtr GetVerifiedAST(XyloContext* context, const char* source) {
   inferencer.VisitFileAST(file_ast.get());
   xylo_contract(!inferencer.has_diagnostics());
 
-  Verifier verifier(context);
-  verifier.VisitFileAST(file_ast.get());
-  xylo_contract(!verifier.has_diagnostics());
+  FlowAnalyzer flow_analyzer(context);
+  flow_analyzer.VisitFileAST(file_ast.get());
+  xylo_contract(!flow_analyzer.has_diagnostics());
 
   return file_ast;
 }

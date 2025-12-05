@@ -8,7 +8,7 @@ include(FetchContent)
 find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Found LLVM: ${LLVM_DIR} (found version \"${LLVM_PACKAGE_VERSION}\")")
 
-include_directories(${LLVM_INCLUDE_DIRS})
+include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 llvm_map_components_to_libnames(LLVM_LIBS support core irreader native orcjit)
@@ -43,7 +43,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-add_compile_options(-std=c++20 -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+add_compile_options(-std=c++20 -Werror -Wall -Wextra -Wpedantic -Wno-unused-parameter)
 include_directories("${PROJECT_SOURCE_DIR}/include")
 
 

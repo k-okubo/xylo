@@ -110,11 +110,11 @@ class Inferencer : public DiagnosticReporter {
   void VisitObjectInitializer(ObjectInitializer* init, VariableContext* vctx, InferenceContext* ctx);
   void VisitFieldEntry(FieldEntry* entry, MemberInfo* member_info, InferenceContext* ctx);
 
-  Type* ConvertDeclarableTypeRepr(TypeRepr* type_repr, TypeSink* allocated);
-  Type* ConvertTypeRepr(TypeRepr* type_repr, TypeSink* allocated);
-  Type* ConvertNamedTypeRepr(NamedTypeRepr* type_repr, TypeSink* allocated);
-  FunctionType* ConvertFunctionTypeRepr(FunctionTypeRepr* type_repr, TypeSink* allocated);
-  TupleType* ConvertTupleTypeRepr(TupleTypeRepr* type_repr, TypeSink* allocated);
+  Type* ConvertDeclarableTypeRepr(TypeRepr* type_repr, TypeArena* arena);
+  Type* ConvertTypeRepr(TypeRepr* type_repr, TypeArena* arena);
+  Type* ConvertNamedTypeRepr(NamedTypeRepr* type_repr, TypeArena* arena);
+  FunctionType* ConvertFunctionTypeRepr(FunctionTypeRepr* type_repr, TypeArena* arena);
+  TupleType* ConvertTupleTypeRepr(TupleTypeRepr* type_repr, TypeArena* arena);
 
   EntityState& GetEntityState(Symbol* symbol);
   void RegisterEntityState(Symbol* symbol, EntityState&& state);

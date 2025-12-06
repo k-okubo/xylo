@@ -1109,13 +1109,13 @@ void Inferencer::VisitSelectExpression(SelectExpression* expr, InferenceContext*
   xylo_contract(object_type != nullptr);
 
   auto member_type = new TypeMetavar();
-  auto memreq = new MemberRequirement(expr->member_name(), member_type);
+  auto memcon = new MemberConstraint(expr->member_name(), member_type);
   expr->adopt_type(TypePtr(member_type));
-  expr->adopt_type(TypePtr(memreq));
+  expr->adopt_type(TypePtr(memcon));
   expr->set_type(member_type);
-  expr->set_member_req(memreq);
+  expr->set_member_constraint(memcon);
 
-  memreq->set_on_error([this, expr](const NominalType* nominal) {
+  memcon->set_on_error([this, expr](const NominalType* nominal) {
     auto member_info = nominal->GetMember(expr->member_name());
     if (member_info == nullptr) {
       ReportError(expr->position(), "cannot find member '" + expr->member_name()->str().cpp_str() + "'");
@@ -1124,7 +1124,7 @@ void Inferencer::VisitSelectExpression(SelectExpression* expr, InferenceContext*
     }
   });
 
-  object_type->ConstrainSubtypeOf(memreq);
+  object_type->ConstrainSubtypeOf(memcon);
 }
 
 
@@ -1255,8 +1255,8 @@ void Inferencer::VisitFieldEntry(FieldEntry* entry, MemberInfo* member_info, Inf
 }
 
 
-Type* Inferencer::ConvertDeclarableTypeRepr(TypeRepr* type_repr, TypeSink* allocated) {
-  auto type = ConvertTypeRepr(type_repr, allocated);
+Type* Inferencer::ConvertDeclarableTypeRepr(TypeRepr* type_repr, TypeArena* arena) {
+  auto type = ConvertTypeRepr(type_repr, arena);
 
   switch (type->kind()) {
     case Type::Kind::kNominal:
@@ -1266,53 +1266,53 @@ Type* Inferencer::ConvertDeclarableTypeRepr(TypeRepr* type_repr, TypeSink* alloc
     default: {
       ReportError(type_repr->position(), "unsupported type in declaration");
       auto metavar = new TypeMetavar();
-      allocated->adopt_type(TypePtr(metavar));
+      arena->adopt_type(TypePtr(metavar));
       return metavar;
     }
   }
 }
 
 
-Type* Inferencer::ConvertTypeRepr(TypeRepr* type_repr, TypeSink* allocated) {
+Type* Inferencer::ConvertTypeRepr(TypeRepr* type_repr, TypeArena* arena) {
   switch (type_repr->kind()) {
     case TypeRepr::Kind::kNull:
       xylo_unreachable();
 
     case TypeRepr::Kind::kNamed:
-      return ConvertNamedTypeRepr(type_repr->As<NamedTypeRepr>(), allocated);
+      return ConvertNamedTypeRepr(type_repr->As<NamedTypeRepr>(), arena);
 
     case TypeRepr::Kind::kTuple:
-      return ConvertTupleTypeRepr(type_repr->As<TupleTypeRepr>(), allocated);
+      return ConvertTupleTypeRepr(type_repr->As<TupleTypeRepr>(), arena);
 
     case TypeRepr::Kind::kFunction:
-      return ConvertFunctionTypeRepr(type_repr->As<FunctionTypeRepr>(), allocated);
+      return ConvertFunctionTypeRepr(type_repr->As<FunctionTypeRepr>(), arena);
   }
 
   xylo_unreachable();
 }
 
 
-Type* Inferencer::ConvertNamedTypeRepr(NamedTypeRepr* type_repr, TypeSink* allocated) {
+Type* Inferencer::ConvertNamedTypeRepr(NamedTypeRepr* type_repr, TypeArena* arena) {
   return type_repr->symbol()->type();
 }
 
 
-FunctionType* Inferencer::ConvertFunctionTypeRepr(FunctionTypeRepr* type_repr, TypeSink* allocated) {
-  auto params_type = ConvertTupleTypeRepr(type_repr->params_type(), allocated);
-  auto return_type = ConvertDeclarableTypeRepr(type_repr->return_type(), allocated);
+FunctionType* Inferencer::ConvertFunctionTypeRepr(FunctionTypeRepr* type_repr, TypeArena* arena) {
+  auto params_type = ConvertTupleTypeRepr(type_repr->params_type(), arena);
+  auto return_type = ConvertDeclarableTypeRepr(type_repr->return_type(), arena);
   auto function_type = new FunctionType(true, params_type, return_type);
-  allocated->adopt_type(TypePtr(function_type));
+  arena->adopt_type(TypePtr(function_type));
   return function_type;
 }
 
 
-TupleType* Inferencer::ConvertTupleTypeRepr(TupleTypeRepr* type_repr, TypeSink* allocated) {
+TupleType* Inferencer::ConvertTupleTypeRepr(TupleTypeRepr* type_repr, TypeArena* arena) {
   auto tuple_type = new TupleType();
   for (auto& element : type_repr->elements()) {
-    auto element_type = ConvertDeclarableTypeRepr(element.get(), allocated);
+    auto element_type = ConvertDeclarableTypeRepr(element.get(), arena);
     tuple_type->add_element(element_type);
   }
-  allocated->adopt_type(TypePtr(tuple_type));
+  arena->adopt_type(TypePtr(tuple_type));
   return tuple_type;
 }
 
@@ -1345,10 +1345,10 @@ bool Inferencer::MarkLValue(Expression* expr) {
 
     case Expression::Kind::kSelect: {
       auto select_expr = expr->As<SelectExpression>();
-      auto member_req = select_expr->member_req();
-      if (member_req == nullptr) {
+      auto member_con = select_expr->member_constraint();
+      if (member_con == nullptr) {
         return true;  // error case, skip
-      } else if (member_req->SetMutable(true)) {
+      } else if (member_con->SetMutable(true)) {
         select_expr->set_lvalue(true);
         return true;
       } else {

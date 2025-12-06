@@ -43,31 +43,31 @@ using TypePairSet = Set<std::pair<const Type*, const Type*>, PairHash>;
 class Substitution;
 
 
-class TypeSink {
+class TypeArena {
  public:
-  TypeSink() :
-      type_pool_() {}
-  virtual ~TypeSink() = default;
+  TypeArena() :
+      pool_() {}
+  virtual ~TypeArena() = default;
 
-  void adopt_type(TypePtr&& type) { type_pool_.push_back(std::move(type)); }
-  void adopt_types(TypeSink* other) {
-    for (auto& type : other->type_pool_) {
-      type_pool_.push_back(std::move(type));
+  void adopt_type(TypePtr&& type) { pool_.push_back(std::move(type)); }
+  void merge(TypeArena* other) {
+    for (auto& type : other->pool_) {
+      pool_.push_back(std::move(type));
     }
-    other->type_pool_.clear();
+    other->pool_.clear();
   }
 
  private:
-  Vector<TypePtr> type_pool_;
+  Vector<TypePtr> pool_;
 };
 
 
-class Type : public TypeSink, public Downcastable {
+class Type : public TypeArena, public Downcastable {
  public:
   enum class Kind {
     kError,
     kNominal,
-    kMemberReq,
+    kMemberConstraint,
     kFunction,
     kTuple,
     kIntersection,
@@ -120,12 +120,12 @@ class Type : public TypeSink, public Downcastable {
   // mark other <: this <: other, this <: other <: this
   bool ConstrainSameAs(Type* other);
 
-  virtual Type* CloseOverMetavars(int depth, TypeSink* out_allocated) = 0;
+  virtual Type* CloseOverMetavars(int depth, TypeArena* arena) = 0;
   void PruneInnerScopeVars(int depth);
-  Type* Generalize(int depth, TypeSink* out_allocated);
-  virtual Type* Instantiate(TypeSink* out_allocated, Vector<TypeMetavar*>* out_instantiated_vars) const;
+  Type* Generalize(int depth, TypeArena* arena);
+  virtual Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_instantiated_vars) const;
 
-  virtual Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) = 0;
+  virtual Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) = 0;
   bool IsGroundType() const;
 
  private:
@@ -146,8 +146,8 @@ class ErrorType : public Type {
 
  public:
   bool equals(const Type* other) const override;
-  Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
+  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 };
 
 
@@ -195,8 +195,8 @@ class NominalType : public Type {
   MemberInfo* AddEmbedding(Identifier* field_name, NominalType* clazz);
   bool AddSuper(NominalType* clazz);
 
-  Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
+  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
   Category category_;
@@ -279,10 +279,10 @@ class SuperInfo : public NominalSlot {
 };
 
 
-class MemberRequirement : public Type {
+class MemberConstraint : public Type {
  public:
-  MemberRequirement(Identifier* name, Type* type) :
-      Type(Kind::kMemberReq),
+  MemberConstraint(Identifier* name, Type* type) :
+      Type(Kind::kMemberConstraint),
       name_(name),
       type_(type),
       mutable_(false),
@@ -315,8 +315,8 @@ class MemberRequirement : public Type {
   bool equals(const Type* other) const override;
   bool is_atomic_type() const override { return true; }
 
-  bool CanAccept(const NominalType* nominal, TypePairSet* visited) const;
-  bool Accept(NominalType* nominal, TypePairSet* visited);
+  bool CanResolve(const NominalType* nominal, TypePairSet* visited) const;
+  bool Resolve(NominalType* nominal, TypePairSet* visited);
 
   void CallbackOnError(const NominalType* nominal) const {
     if (on_error_) {
@@ -324,8 +324,8 @@ class MemberRequirement : public Type {
     }
   }
 
-  Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
+  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
   Identifier* name_;
@@ -355,8 +355,8 @@ class FunctionType : public Type {
   bool equals(const Type* other) const override;
   bool is_function_type() const override { return true; }
 
-  Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
+  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
   bool closure_;
@@ -381,8 +381,8 @@ class TupleType : public Type {
   bool empty() const { return elements_.empty(); }
   bool equals(const Type* other) const override;
 
-  Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
+  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
   Vector<Type*> elements_;
@@ -413,8 +413,8 @@ class IntersectionType : public Type {
 
   void ShrinkToLower();
 
-  Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
+  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
   Vector<Type*> elements_;
@@ -446,8 +446,8 @@ class UnionType : public Type {
 
   void ShrinkToUpper();
 
-  Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
+  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
   Vector<Type*> elements_;
@@ -535,9 +535,9 @@ class TypeVariable : public Type {
   bool is_function_type() const override { return varbase_.func_shape() != nullptr; }
   bool is_var_type() const override { return true; }
 
-  Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
+  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
   void PruneInnerScopeVars();
-  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  protected:
   bool CanConstrainUpperBound(const Type* new_ub, TypePairSet* visited) const {
@@ -584,8 +584,8 @@ class TypeMetavar : public Type {
   bool is_function_type() const override { return varbase_.func_shape() != nullptr; }
   bool is_var_type() const override { return true; }
 
-  Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
+  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  protected:
   void set_upper_bound(IntersectionTypePtr&& upper_bound) { varbase_.set_upper_bound(std::move(upper_bound)); }
@@ -627,9 +627,9 @@ class TypeScheme : public Type {
 
   bool equals(const Type* other) const override;
 
-  Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Instantiate(TypeSink* out_allocated, Vector<TypeMetavar*>* out_instantiated_vars) const override;
-  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
+  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_instantiated_vars) const override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
   Vector<TypeVariable*> vars_;
@@ -677,7 +677,7 @@ class TypePrinter {
 
   std::string Print(const Type* type, bool paren, Status* status) const;
   std::string Print(const NominalType* type, bool paren, Status* status) const;
-  std::string Print(const MemberRequirement* type, bool paren, Status* status) const;
+  std::string Print(const MemberConstraint* type, bool paren, Status* status) const;
   std::string Print(const FunctionType* type, bool paren, Status* status) const;
   std::string Print(const TupleType* type, bool paren, Status* status) const;
   std::string Print(const IntersectionType* type, bool paren, Status* status) const;

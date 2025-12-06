@@ -332,10 +332,10 @@ llvm::Value* FunctionLowerer::BuildFunctionIdentifier(IdentifierExpression* expr
   auto symbol = expr->symbol();
 
   TypeVec type_args;
-  TypeSink allocated;
+  TypeArena arena;
 
   for (auto var : expr->instantiated_vars()) {
-    type_args.push_back(var->Zonk(subst(), false, &allocated));
+    type_args.push_back(var->Zonk(subst(), false, &arena));
   }
   auto llvm_func = LoweringNode::GetOrBuildFunction(symbol, type_args);
   auto xylo_func = GetXyloFunction(symbol);
@@ -379,15 +379,15 @@ llvm::Value* FunctionLowerer::BuildFunctionExpression(FunctionExpression* expr) 
 llvm::Value* FunctionLowerer::BuildApplyExpression(ApplyExpression* expr) {
   llvm::Value* closure_env_ptr = nullptr;
 
-  TypeSink allocated;
-  auto xylo_func_type = expr->func()->type()->Zonk(subst(), false, &allocated)->As<FunctionType>();
+  TypeArena arena;
+  auto xylo_func_type = expr->func()->type()->Zonk(subst(), false, &arena)->As<FunctionType>();
 
   // prepare argument values
   Vector<llvm::Value*> arg_values;
   arg_values.push_back(closure_env_ptr);
   for (size_t i = 0; i < expr->args()->elements().size(); ++i) {
     auto arg_expr = expr->args()->elements()[i].get();
-    auto arg_type = arg_expr->type()->Zonk(subst(), false, &allocated);
+    auto arg_type = arg_expr->type()->Zonk(subst(), false, &arena);
     auto param_type = xylo_func_type->params_type()->elements()[i];
 
     auto arg_value = BuildExpression(arg_expr);
@@ -704,10 +704,10 @@ llvm::Value* FunctionLowerer::BuildBinaryExpression(BinaryExpression* expr) {
 
 
 llvm::Value* FunctionLowerer::BuildConditionalExpression(ConditionalExpression* expr) {
-  TypeSink allocated;
+  TypeArena arena;
   auto then_expr_type = expr->then_expr()->type();
   auto else_expr_type = expr->else_expr()->type();
-  auto merged_type = expr->type()->Zonk(subst(), false, &allocated);
+  auto merged_type = expr->type()->Zonk(subst(), false, &arena);
   bool merge_bb_reachable = expr->is_reachable_then() || expr->is_reachable_else();
 
   // create each block
@@ -729,8 +729,8 @@ llvm::Value* FunctionLowerer::BuildConditionalExpression(ConditionalExpression* 
 
     // adjust type if value is required in context
     if (merged_type != xylo_context()->unit_type()) {
-      TypeSink allocated;
-      auto zonked_branch_type = type->Zonk(subst(), false, &allocated);
+      TypeArena arena;
+      auto zonked_branch_type = type->Zonk(subst(), false, &arena);
       value = AdjustType(value, zonked_branch_type, merged_type);
     }
 
@@ -830,8 +830,8 @@ void FunctionLowerer::BuildFieldEntry(FieldEntry* entry, xylo::Type* var_type, l
 
 
 llvm::Value* FunctionLowerer::BuildSelectExpression(SelectExpression* expr, llvm::Value** out_closure_env) {
-  TypeSink allocated;
-  auto object_type = expr->object()->type()->Zonk(subst(), false, &allocated)->As<NominalType>();
+  TypeArena arena;
+  auto object_type = expr->object()->type()->Zonk(subst(), false, &arena)->As<NominalType>();
 
   if (object_type->category() == NominalType::Category::kClass) {
     return BuildClassSelect(expr, object_type, out_closure_env);
@@ -870,10 +870,10 @@ llvm::Value* FunctionLowerer::BuildClassSelect(SelectExpression* expr, NominalTy
       return bu.MemberPtr(instance_struct, object_ptr, member_path);
 
     case MemberInfo::Kind::kMethod: {
-      TypeSink allocated;
+      TypeArena arena;
       TypeVec type_args;
-      for (auto var : expr->member_req()->instantiated_vars()) {
-        type_args.push_back(var->Zonk(subst(), false, &allocated));
+      for (auto var : expr->member_constraint()->instantiated_vars()) {
+        type_args.push_back(var->Zonk(subst(), false, &arena));
       }
       auto llvm_func = GetOrBuildMethod(member_info->owner(), expr->member_name(), type_args);
 
@@ -934,8 +934,8 @@ llvm::Value* FunctionLowerer::BuildBlockExpression(BlockExpression* expr) {
 
 llvm::Type* FunctionLowerer::ZonkAndConvert(xylo::Type* type, bool function_as_pointer) {
   TypeConverter type_converter(xylo_context(), llvm_context());
-  TypeSink allocated;
-  auto zonked_type = type->Zonk(subst(), false, &allocated);
+  TypeArena arena;
+  auto zonked_type = type->Zonk(subst(), false, &arena);
   auto llvm_type = type_converter.Convert(zonked_type, function_as_pointer);
 
   return llvm_type;
@@ -943,9 +943,9 @@ llvm::Type* FunctionLowerer::ZonkAndConvert(xylo::Type* type, bool function_as_p
 
 
 llvm::Value* FunctionLowerer::ZonkAndAdjustType(llvm::Value* value, xylo::Type* from_type, xylo::Type* to_type) {
-  TypeSink allocated;
-  auto zonked_from_type = from_type->Zonk(subst(), false, &allocated);
-  auto zonked_to_type = to_type->Zonk(subst(), false, &allocated);
+  TypeArena arena;
+  auto zonked_from_type = from_type->Zonk(subst(), false, &arena);
+  auto zonked_to_type = to_type->Zonk(subst(), false, &arena);
 
   return AdjustType(value, zonked_from_type, zonked_to_type);
 }

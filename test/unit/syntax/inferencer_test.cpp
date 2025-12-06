@@ -135,8 +135,8 @@ TEST(InferencerTest, LiteralAndVar) {
   auto init_expr = var_stmt->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(var_stmt->symbol()->type()->Zonk(&subst, true, &allocated), context.float_type());
+  TypeArena arena;
+  EXPECT_EQ(var_stmt->symbol()->type()->Zonk(&subst, true, &arena), context.float_type());
   EXPECT_EQ(init_expr->type(), context.int_type());
 }
 
@@ -167,9 +167,9 @@ TEST(InferencerTest, BindUnitToLet) {
 
   auto let_stmt1 = main_statements[0]->As<LetStatement>();
 
-  TypeSink allocated;
+  TypeArena arena;
   Substitution subst;
-  EXPECT_EQ(let_stmt1->symbol()->type()->Zonk(&subst, true, &allocated), context.unit_type());
+  EXPECT_EQ(let_stmt1->symbol()->type()->Zonk(&subst, true, &arena), context.unit_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "() -> unit");
@@ -202,9 +202,9 @@ TEST(InferencerTest, BindUnitToVar) {
 
   auto var_stmt1 = main_statements[0]->As<VarStatement>();
 
-  TypeSink allocated;
+  TypeArena arena;
   Substitution subst;
-  EXPECT_EQ(var_stmt1->symbol()->type()->Zonk(&subst, true, &allocated), context.unit_type());
+  EXPECT_EQ(var_stmt1->symbol()->type()->Zonk(&subst, true, &arena), context.unit_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "() -> unit");
@@ -238,8 +238,8 @@ TEST(InferencerTest, CompareSameType) {
   auto ternary_expr = return_stmt->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(ternary_expr->type()->Zonk(&subst, true, &allocated), context.int_type());
+  TypeArena arena;
+  EXPECT_EQ(ternary_expr->type()->Zonk(&subst, true, &arena), context.int_type());
 }
 
 
@@ -474,8 +474,8 @@ TEST(InferencerTest, ConstTypeFunction) {
   auto apply_expr = let_stmt->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &allocated), externals.dog_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), externals.dog_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "() -> Dog");
@@ -556,8 +556,8 @@ TEST(InferencerTest, FuncTypeRepr_VoidToUnit) {
   auto apply_expr = let_stmt->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &allocated), context.unit_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), context.unit_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "() -> unit");
@@ -676,9 +676,9 @@ TEST(InferencerTest, AddFunction_Polymorphic) {
   auto apply_expr2 = let_stmt2->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &allocated), context.int_type());
-  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &allocated), context.float_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), context.int_type());
+  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), context.float_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
@@ -746,9 +746,9 @@ TEST(InferencerTest, IdentityFunction_NominalType) {
   auto apply_expr2 = let_stmt2->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &allocated), externals.dog_type());
-  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &allocated), externals.cat_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), externals.dog_type());
+  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), externals.cat_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "Forall (A). A -> A");
@@ -786,8 +786,8 @@ TEST(InferencerTest, IdentityFunction_FunctionType) {
   auto apply_expr1 = let_stmt1->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &allocated), context.int_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), context.int_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "Forall (A). A -> A");
@@ -830,8 +830,8 @@ TEST(InferencerTest, ApplyFunction) {
   auto apply_expr = let_stmt->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &allocated), context.int_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), context.int_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
@@ -880,8 +880,8 @@ TEST(InferencerTest, ApplyFunction_WithTypeConstraints1) {
   auto apply_expr = let_stmt->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &allocated), externals.animal_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), externals.animal_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
@@ -995,8 +995,8 @@ TEST(InferencerTest, CurriedFunction_Simple) {
   auto apply_expr = let_stmt->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &allocated), context.int_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), context.int_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
@@ -1076,8 +1076,8 @@ TEST(InferencerTest, NestedFunction_ReturnsOuterVar) {
   auto apply_expr = let_stmt->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &allocated), externals.dog_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), externals.dog_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "Forall (A). A -> A");
@@ -1127,9 +1127,9 @@ TEST(InferencerTest, NestedFunction_InnerFuncPolymorphic) {
   auto apply_expr2 = let_stmt2->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &allocated), context.int_type());
-  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &allocated), externals.dog_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), context.int_type());
+  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), externals.dog_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(
@@ -1195,8 +1195,8 @@ TEST(InferencerTest, RecursiveFunction_WithTypeRepr) {
   auto apply_expr = let_stmt1->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &allocated), context.int_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), context.int_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "int -> int");
@@ -1302,9 +1302,9 @@ TEST(InferencerTest, MutualRecursion_WithTypeRepr) {
   auto apply_expr2 = let_stmt2->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &allocated), context.bool_type());
-  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &allocated), context.bool_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), context.bool_type());
+  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), context.bool_type());
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "int -> bool");
@@ -1522,10 +1522,10 @@ TEST(InferencerTest, NewObject) {
   EXPECT_EQ(let_stmt_x->symbol()->name()->str().cpp_str(), "x");
   EXPECT_EQ(let_stmt_y->symbol()->name()->str().cpp_str(), "y");
 
-  TypeSink allocated;
+  TypeArena arena;
   Substitution subst;
-  EXPECT_EQ(let_stmt_x->symbol()->type()->Zonk(&subst, true, &allocated), context.int_type());
-  EXPECT_EQ(let_stmt_y->symbol()->type()->Zonk(&subst, true, &allocated), context.int_type());
+  EXPECT_EQ(let_stmt_x->symbol()->type()->Zonk(&subst, true, &arena), context.int_type());
+  EXPECT_EQ(let_stmt_y->symbol()->type()->Zonk(&subst, true, &arena), context.int_type());
 }
 
 
@@ -1989,8 +1989,8 @@ TEST(InferencerTest, GetterMethod) {
   auto let_expr = let_stmt->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(let_expr->type()->Zonk(&subst, true, &allocated), context.float_type());
+  TypeArena arena;
+  EXPECT_EQ(let_expr->type()->Zonk(&subst, true, &arena), context.float_type());
 }
 
 
@@ -2082,8 +2082,8 @@ TEST(InferencerTest, RecursiveMethod_WithTypeRepr) {
   auto apply_expr = let_stmt1->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &allocated), context.int_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), context.int_type());
 
   ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "Factorial");
   auto class_decl = file_ast->declarations()[0]->As<ClassDeclaration>();
@@ -2170,9 +2170,9 @@ TEST(InferencerTest, MutualRecursionMethod_WithTypeRepr) {
   auto apply_expr2 = let_stmt2->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &allocated), context.bool_type());
-  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &allocated), context.bool_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), context.bool_type());
+  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), context.bool_type());
 
   ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "EvenOdd");
   auto class_decl = file_ast->declarations()[0]->As<ClassDeclaration>();
@@ -2237,9 +2237,9 @@ TEST(InferencerTest, MutualRecursionMethod_WithFunc) {
   auto apply_expr2 = let_stmt2->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &allocated), context.bool_type());
-  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &allocated), context.bool_type());
+  TypeArena arena;
+  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), context.bool_type());
+  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), context.bool_type());
 }
 
 
@@ -2319,9 +2319,9 @@ TEST(InferencerTest, NestedClassInPolymorphicFunction1) {
   auto let_expr2 = let_stmt2->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(let_expr1->type()->Zonk(&subst, true, &allocated), context.int_type());
-  EXPECT_EQ(let_expr2->type()->Zonk(&subst, true, &allocated), context.float_type());
+  TypeArena arena;
+  EXPECT_EQ(let_expr1->type()->Zonk(&subst, true, &arena), context.int_type());
+  EXPECT_EQ(let_expr2->type()->Zonk(&subst, true, &arena), context.float_type());
 }
 
 
@@ -2367,9 +2367,9 @@ TEST(InferencerTest, NestedClassInPolymorphicFunction2) {
   auto let_expr3 = let_stmt3->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(let_expr2->type()->Zonk(&subst, true, &allocated), externals.dog_type());
-  EXPECT_EQ(let_expr3->type()->Zonk(&subst, true, &allocated), externals.animal_type());
+  TypeArena arena;
+  EXPECT_EQ(let_expr2->type()->Zonk(&subst, true, &arena), externals.dog_type());
+  EXPECT_EQ(let_expr3->type()->Zonk(&subst, true, &arena), externals.animal_type());
 }
 #endif
 
@@ -2414,8 +2414,8 @@ TEST(InferencerTest, Embedding_Basic) {
   auto let_expr = let_stmt->expr();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(let_expr->type()->Zonk(&subst, true, &allocated), context.float_type());
+  TypeArena arena;
+  EXPECT_EQ(let_expr->type()->Zonk(&subst, true, &arena), context.float_type());
 }
 
 
@@ -2540,9 +2540,9 @@ TEST(InferencerTest, Interface_Basic) {
   auto interface_type = interface_decl->symbol()->type()->As<NominalType>();
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(let_expr->type()->Zonk(&subst, true, &allocated), interface_type);
-  EXPECT_EQ(return_expr->type()->Zonk(&subst, true, &allocated), context.int_type());
+  TypeArena arena;
+  EXPECT_EQ(let_expr->type()->Zonk(&subst, true, &arena), interface_type);
+  EXPECT_EQ(return_expr->type()->Zonk(&subst, true, &arena), context.int_type());
 }
 
 

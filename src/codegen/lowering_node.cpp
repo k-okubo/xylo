@@ -61,7 +61,7 @@ static void TypeKey(HString* out, const Type* type, XyloContext* context) {
       return;
 
     case Type::Kind::kError:
-    case Type::Kind::kMemberReq:
+    case Type::Kind::kMemberConstraint:
     case Type::Kind::kTyvar:
     case Type::Kind::kMetavar:
     case Type::Kind::kScheme:

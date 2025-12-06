@@ -196,7 +196,7 @@ bool NominalType::equals(const Type* other) const {
 }
 
 
-bool MemberRequirement::equals(const Type* other) const {
+bool MemberConstraint::equals(const Type* other) const {
   return this == other;
 }
 
@@ -309,7 +309,7 @@ bool TypeScheme::equals(const Type* other) const {
 template <typename F1, typename F2, typename F3, typename F4, typename F5, typename F6, typename F7, typename F8>
 struct SubtypingProc {
   F1 recurse;
-  F2 onRecToMemberReq;
+  F2 onNominalToMemcon;
   F3 onTyvarBoth;
   F4 onTyvarSrc;
   F5 onTyvarDst;
@@ -342,22 +342,22 @@ static bool ApplySubtypingRules(S src, D dst, const P& proc) {
     return false;
   }
 
-  // nominal to member requirement
-  if (src->kind() == Type::Kind::kNominal && dst->kind() == Type::Kind::kMemberReq) {
+  // nominal to member constraint
+  if (src->kind() == Type::Kind::kNominal && dst->kind() == Type::Kind::kMemberConstraint) {
     auto src_nominal = src->template As<NominalType>();
-    auto dst_memreq = dst->template As<MemberRequirement>();
-    if (dst_memreq->is_resolved()) {
-      return src_nominal->IsSubtypeOf(dst_memreq->origin_owner());
+    auto dst_memcon = dst->template As<MemberConstraint>();
+    if (dst_memcon->is_resolved()) {
+      return src_nominal->IsSubtypeOf(dst_memcon->origin_owner());
     }
-    return proc.onRecToMemberReq(src_nominal, dst_memreq);
+    return proc.onNominalToMemcon(src_nominal, dst_memcon);
   }
 
-  // member requirement src is only compatible with nominal dst if resolved
-  if (src->kind() == Type::Kind::kMemberReq) {
+  // member constraint src is only compatible with nominal dst if resolved
+  if (src->kind() == Type::Kind::kMemberConstraint) {
     if (dst->kind() == Type::Kind::kNominal) {
-      auto src_memreq = src->template As<MemberRequirement>();
-      if (src_memreq->is_resolved()) {
-        return src_memreq->origin_owner()->IsSubtypeOf(dst);
+      auto src_memcon = src->template As<MemberConstraint>();
+      if (src_memcon->is_resolved()) {
+        return src_memcon->origin_owner()->IsSubtypeOf(dst);
       }
     }
     return false;
@@ -535,8 +535,8 @@ bool Type::IsSubtypeOf(const Type* dst, TypePairSet* visited) const {
           return s->IsSubtypeOf(d, visited);
         },
 
-    .onRecToMemberReq =
-        [=](const NominalType* nominal, const MemberRequirement* memreq) {
+    .onNominalToMemcon =
+        [=](const NominalType* nominal, const MemberConstraint* memcon) {
           return false;
         },
 
@@ -578,9 +578,9 @@ bool Type::CanConstrainSubtypeOf(const Type* dst, TypePairSet* visited) const {
           return s->CanConstrainSubtypeOf(d, visited);
         },
 
-    .onRecToMemberReq =
-        [=](const NominalType* nominal, const MemberRequirement* memreq) {
-          return memreq->CanAccept(nominal, visited);
+    .onNominalToMemcon =
+        [=](const NominalType* nominal, const MemberConstraint* memcon) {
+          return memcon->CanResolve(nominal, visited);
         },
 
     .onTyvarBoth = onVarSrc,
@@ -628,9 +628,9 @@ bool Type::ConstrainSubtypeOf(Type* dst, TypePairSet* visited) {
           return s->ConstrainSubtypeOf(d, visited);
         },
 
-    .onRecToMemberReq =
-        [=](NominalType* nominal, MemberRequirement* memreq) {
-          return memreq->Accept(nominal, visited);
+    .onNominalToMemcon =
+        [=](NominalType* nominal, MemberConstraint* memcon) {
+          return memcon->Resolve(nominal, visited);
         },
 
     .onTyvarBoth = onVarBoth,
@@ -650,7 +650,7 @@ bool Type::ConstrainSameAs(Type* other) {
 }
 
 
-static Type* FindOriginOwner(NominalType* owner, Identifier* member_name, MemberInfo::Kind kind, TypeSink* allocated) {
+static Type* FindOriginOwner(NominalType* owner, Identifier* member_name, MemberInfo::Kind kind, TypeArena* arena) {
   Vector<MemberInfo*> super_members;
   owner->FindSuperMembers(member_name, &super_members);
 
@@ -675,7 +675,7 @@ static Type* FindOriginOwner(NominalType* owner, Identifier* member_name, Member
 
     default: {
       auto result = origin_owners.get();
-      allocated->adopt_type(std::move(origin_owners));
+      arena->adopt_type(std::move(origin_owners));
       return result;
     }
   }
@@ -684,7 +684,7 @@ static Type* FindOriginOwner(NominalType* owner, Identifier* member_name, Member
 }
 
 
-bool MemberRequirement::CanAccept(const NominalType* nominal, TypePairSet* visited) const {
+bool MemberConstraint::CanResolve(const NominalType* nominal, TypePairSet* visited) const {
   auto member = nominal->GetMember(this->name());
   if (member == nullptr) {
     CallbackOnError(nominal);
@@ -701,9 +701,9 @@ bool MemberRequirement::CanAccept(const NominalType* nominal, TypePairSet* visit
     return false;
   }
 
-  TypeSink allocated;
+  TypeArena arena;
   Vector<TypeMetavar*> instantiated_vars;
-  auto member_type = member->type()->Instantiate(&allocated, &instantiated_vars);
+  auto member_type = member->type()->Instantiate(&arena, &instantiated_vars);
 
   if (!member_type->CanConstrainSubtypeOf(this->type(), visited)) {
     CallbackOnError(nominal);
@@ -718,7 +718,7 @@ bool MemberRequirement::CanAccept(const NominalType* nominal, TypePairSet* visit
 }
 
 
-bool MemberRequirement::Accept(NominalType* nominal, TypePairSet* visited) {
+bool MemberConstraint::Resolve(NominalType* nominal, TypePairSet* visited) {
   auto member = nominal->GetMember(this->name());
   if (member == nullptr) {
     CallbackOnError(nominal);
@@ -735,9 +735,9 @@ bool MemberRequirement::Accept(NominalType* nominal, TypePairSet* visited) {
     return false;
   }
 
-  TypeSink allocated;
+  TypeArena arena;
   Vector<TypeMetavar*> instantiated_vars;
-  auto member_type = member->type()->Instantiate(&allocated, &instantiated_vars);
+  auto member_type = member->type()->Instantiate(&arena, &instantiated_vars);
 
   if (!member_type->ConstrainSameAs(this->type())) {
     CallbackOnError(nominal);
@@ -746,7 +746,7 @@ bool MemberRequirement::Accept(NominalType* nominal, TypePairSet* visited) {
 
   this->set_resolved(member);
   this->set_instantiated_vars(std::move(instantiated_vars));
-  this->adopt_types(&allocated);
+  this->merge(&arena);
 
   auto owner = member->owner();
   if (!nominal->IsSubtypeOf(owner)) {
@@ -764,7 +764,7 @@ bool MemberRequirement::Accept(NominalType* nominal, TypePairSet* visited) {
 }
 
 
-bool MemberRequirement::SetMutable(bool m) {
+bool MemberConstraint::SetMutable(bool m) {
   if (m && is_resolved() && resolved()->kind() != MemberInfo::Kind::kField) {
     return false;
   }
@@ -782,7 +782,7 @@ static bool OccursIn(const Type* haystack, const Type* needle, bool check_ul_bou
     case Type::Kind::kNominal:
       return false;
 
-    case Type::Kind::kMemberReq:
+    case Type::Kind::kMemberConstraint:
       return false;
 
     case Type::Kind::kFunction: {
@@ -901,7 +901,7 @@ static void CollectTopAncestors(Type* type, UnionType* ancestors) {
       // no ancestors
       return;
 
-    case Type::Kind::kMemberReq:
+    case Type::Kind::kMemberConstraint:
     case Type::Kind::kFunction:
     case Type::Kind::kTuple:
     case Type::Kind::kUnion:
@@ -947,7 +947,7 @@ bool VariableBase::CanConstrainUpperBound(const Type* new_ub, TypePairSet* visit
 
 
 bool VariableBase::CanConstrainLowerBound(const Type* new_lb, TypePairSet* visited) const {
-  xylo_contract(new_lb->kind() != Type::Kind::kMemberReq);
+  xylo_contract(new_lb->kind() != Type::Kind::kMemberConstraint);
   xylo_contract(new_lb->kind() != Type::Kind::kTuple);
   xylo_contract(new_lb->kind() != Type::Kind::kUnion);
   xylo_contract(new_lb->kind() != Type::Kind::kScheme);
@@ -1034,22 +1034,22 @@ bool VariableBase::ConstrainUpperBoundForFunc(Type* new_ub, TypePairSet* visited
 
 
 bool VariableBase::ConstrainUpperBoundForAtom(Type* new_ub, TypePairSet* visited) {
-  if (new_ub->kind() == Type::Kind::kMemberReq) {
-    auto ub_memreq = new_ub->As<MemberRequirement>();
+  if (new_ub->kind() == Type::Kind::kMemberConstraint) {
+    auto ub_memcon = new_ub->As<MemberConstraint>();
 
     if (owner_->kind() == Type::Kind::kTyvar) {
       auto owner_tyvar = owner_->As<TypeVariable>();
 
-      if (ub_memreq->type()->kind() == Type::Kind::kTyvar) {
-        auto ub_member_tyvar = ub_memreq->type()->As<TypeVariable>();
+      if (ub_memcon->type()->kind() == Type::Kind::kTyvar) {
+        auto ub_member_tyvar = ub_memcon->type()->As<TypeVariable>();
         if (ub_member_tyvar->depth() > owner_tyvar->depth()) {
           ub_member_tyvar->set_depth(owner_tyvar->depth());
         }
       }
-      if (ub_memreq->type()->kind() == Type::Kind::kMetavar) {
+      if (ub_memcon->type()->kind() == Type::Kind::kMetavar) {
         auto ub_member_tyvar = new TypeVariable(owner_tyvar->depth());
-        ub_member_tyvar->ConstrainSameAs(ub_memreq->type());
-        ub_memreq->set_type(ub_member_tyvar);
+        ub_member_tyvar->ConstrainSameAs(ub_memcon->type());
+        ub_memcon->set_type(ub_member_tyvar);
         owner_->adopt_type(TypePtr(ub_member_tyvar));
       }
     }
@@ -1061,7 +1061,7 @@ bool VariableBase::ConstrainUpperBoundForAtom(Type* new_ub, TypePairSet* visited
 
 
 bool VariableBase::ConstrainLowerBound(Type* new_lb, TypePairSet* visited) {
-  xylo_contract(new_lb->kind() != Type::Kind::kMemberReq);
+  xylo_contract(new_lb->kind() != Type::Kind::kMemberConstraint);
   xylo_contract(new_lb->kind() != Type::Kind::kTuple);
   xylo_contract(new_lb->kind() != Type::Kind::kUnion);
   xylo_contract(new_lb->kind() != Type::Kind::kScheme);
@@ -1117,7 +1117,6 @@ bool VariableBase::ConstrainLowerBoundForFunc(Type* new_lb, TypePairSet* visited
 bool VariableBase::ConstrainLowerBoundForAtom(Type* new_lb, TypePairSet* visited) {
   // Add new_lb's ancestors to the upper bound to enable sibling checking for types added to lb in the future.
   auto ancestors = std::make_unique<UnionType>();
-  Vector<Type*> out_allocated;
   CollectTopAncestors(new_lb, ancestors.get());
 
   switch (ancestors->elements().size()) {
@@ -1309,32 +1308,32 @@ void UnionType::ShrinkToUpper() {
 }
 
 
-Type* ErrorType::CloseOverMetavars(int depth, TypeSink* out_allocated) {
+Type* ErrorType::CloseOverMetavars(int depth, TypeArena* arena) {
   return this;
 }
 
 
-Type* NominalType::CloseOverMetavars(int depth, TypeSink* out_allocated) {
+Type* NominalType::CloseOverMetavars(int depth, TypeArena* arena) {
   return this;
 }
 
 
-Type* MemberRequirement::CloseOverMetavars(int depth, TypeSink* out_allocated) {
+Type* MemberConstraint::CloseOverMetavars(int depth, TypeArena* arena) {
   return this;
 }
 
 
-Type* FunctionType::CloseOverMetavars(int depth, TypeSink* out_allocated) {
-  params_type()->CloseOverMetavars(depth, out_allocated);
-  return_type_ = return_type()->CloseOverMetavars(depth, out_allocated);
+Type* FunctionType::CloseOverMetavars(int depth, TypeArena* arena) {
+  params_type()->CloseOverMetavars(depth, arena);
+  return_type_ = return_type()->CloseOverMetavars(depth, arena);
   return this;
 }
 
 
-Type* TupleType::CloseOverMetavars(int depth, TypeSink* out_allocated) {
+Type* TupleType::CloseOverMetavars(int depth, TypeArena* arena) {
   Vector<Type*> new_elements;
   for (auto elem : elements()) {
-    auto new_elem = elem->CloseOverMetavars(depth, out_allocated);
+    auto new_elem = elem->CloseOverMetavars(depth, arena);
     new_elements.push_back(new_elem);
   }
 
@@ -1343,10 +1342,10 @@ Type* TupleType::CloseOverMetavars(int depth, TypeSink* out_allocated) {
 }
 
 
-Type* IntersectionType::CloseOverMetavars(int depth, TypeSink* out_allocated) {
+Type* IntersectionType::CloseOverMetavars(int depth, TypeArena* arena) {
   Vector<Type*> new_elements;
   for (auto elem : elements()) {
-    auto new_elem = elem->CloseOverMetavars(depth, out_allocated);
+    auto new_elem = elem->CloseOverMetavars(depth, arena);
     new_elements.push_back(new_elem);
   }
 
@@ -1355,10 +1354,10 @@ Type* IntersectionType::CloseOverMetavars(int depth, TypeSink* out_allocated) {
 }
 
 
-Type* UnionType::CloseOverMetavars(int depth, TypeSink* out_allocated) {
+Type* UnionType::CloseOverMetavars(int depth, TypeArena* arena) {
   Vector<Type*> new_elements;
   for (auto elem : elements()) {
-    auto new_elem = elem->CloseOverMetavars(depth, out_allocated);
+    auto new_elem = elem->CloseOverMetavars(depth, arena);
     new_elements.push_back(new_elem);
   }
 
@@ -1367,25 +1366,25 @@ Type* UnionType::CloseOverMetavars(int depth, TypeSink* out_allocated) {
 }
 
 
-Type* TypeVariable::CloseOverMetavars(int depth, TypeSink* out_allocated) {
+Type* TypeVariable::CloseOverMetavars(int depth, TypeArena* arena) {
   return this;
 }
 
 
-Type* TypeMetavar::CloseOverMetavars(int depth, TypeSink* out_allocated) {
+Type* TypeMetavar::CloseOverMetavars(int depth, TypeArena* arena) {
   Substitution subst;
-  auto outgoing = this->Zonk(&subst, true, out_allocated);
+  auto outgoing = this->Zonk(&subst, true, arena);
   if (outgoing->kind() == Type::Kind::kError) {
     // The metavar cannot be determined uniquely, so it should be made into a variable.
     outgoing = new TypeVariable(depth);
     this->ConstrainSameAs(outgoing);
-    out_allocated->adopt_type(TypePtr(outgoing));
+    arena->adopt_type(TypePtr(outgoing));
   }
   return outgoing;
 }
 
 
-Type* TypeScheme::CloseOverMetavars(int depth, TypeSink* out_allocated) {
+Type* TypeScheme::CloseOverMetavars(int depth, TypeArena* arena) {
   return this;
 }
 
@@ -1398,7 +1397,7 @@ void Type::PruneInnerScopeVars(int depth) {
     case Type::Kind::kNominal:
       return;
 
-    case Type::Kind::kMemberReq:
+    case Type::Kind::kMemberConstraint:
       return;
 
     case Type::Kind::kFunction: {
@@ -1486,9 +1485,9 @@ static void CollectFreeTyVars(int depth, Type* type, Set<TypeVariable*>* ftv_set
     case Type::Kind::kNominal:
       return;
 
-    case Type::Kind::kMemberReq: {
-      auto memreq = type->As<MemberRequirement>();
-      CollectFreeTyVars(depth, memreq->type(), ftv_set, ftv_vec);
+    case Type::Kind::kMemberConstraint: {
+      auto memcon = type->As<MemberConstraint>();
+      CollectFreeTyVars(depth, memcon->type(), ftv_set, ftv_vec);
       return;
     }
 
@@ -1545,7 +1544,7 @@ static void CollectFreeTyVars(int depth, Type* type, Set<TypeVariable*>* ftv_set
 }
 
 
-Type* Type::Generalize(int depth, TypeSink* out_allocated) {
+Type* Type::Generalize(int depth, TypeArena* arena) {
   // collect tyvars at the specified depth
   Set<TypeVariable*> ftv_set;
   Vector<TypeVariable*> ftv_vec;
@@ -1570,25 +1569,25 @@ Type* Type::Generalize(int depth, TypeSink* out_allocated) {
     return this;
   } else {
     auto scheme = new TypeScheme(std::move(ftv_vec), this);
-    out_allocated->adopt_type(TypePtr(scheme));
+    arena->adopt_type(TypePtr(scheme));
     return scheme;
   }
 }
 
 
-Type* Type::Instantiate(TypeSink* out_allocated, Vector<TypeMetavar*>* out_instantiated_vars) const {
+Type* Type::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_instantiated_vars) const {
   return const_cast<Type*>(this);
 }
 
 
-Type* TypeScheme::Instantiate(TypeSink* out_allocated, Vector<TypeMetavar*>* out_instantiated_vars) const {
+Type* TypeScheme::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_instantiated_vars) const {
   // prepare subst: scheme->vars() => fresh metavars
   Substitution subst;
   for (auto tyvar : this->vars()) {
     auto metavar = new TypeMetavar();
     subst.insert(tyvar, metavar);
     out_instantiated_vars->push_back(metavar);
-    out_allocated->adopt_type(TypePtr(metavar));
+    arena->adopt_type(TypePtr(metavar));
   }
 
   // restore bounds
@@ -1598,25 +1597,25 @@ Type* TypeScheme::Instantiate(TypeSink* out_allocated, Vector<TypeMetavar*>* out
     // substitute upper bounds
     auto upper_bound = new IntersectionType();
     for (auto t : tyvar->upper_bound()->elements()) {
-      upper_bound->add_element(subst.Apply(t, out_allocated));
+      upper_bound->add_element(subst.Apply(t, arena));
     }
     metavar->set_upper_bound(IntersectionTypePtr(upper_bound));
 
     // substitute lower bounds
     auto lower_bound = new UnionType();
     for (auto t : tyvar->lower_bound()->elements()) {
-      lower_bound->add_element(subst.Apply(t, out_allocated));
+      lower_bound->add_element(subst.Apply(t, arena));
     }
     metavar->set_lower_bound(UnionTypePtr(lower_bound));
 
     // substitute function shape
     if (tyvar->func_shape() != nullptr) {
-      auto func_shape = subst.Apply(tyvar->func_shape(), out_allocated);
+      auto func_shape = subst.Apply(tyvar->func_shape(), arena);
       metavar->set_func_shape(func_shape->As<FunctionType>(), tyvar->is_lower_based_closure());
     }
   }
 
-  return subst.Apply(this->body(), out_allocated);
+  return subst.Apply(this->body(), arena);
 }
 
 
@@ -1672,24 +1671,24 @@ static void FindCommonAncestors(const UnionType* types, Vector<Type*>* out_ances
 }
 
 
-Type* ErrorType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
+Type* ErrorType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
   return this;
 }
 
 
-Type* NominalType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
+Type* NominalType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
   return this;
 }
 
 
-Type* MemberRequirement::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
+Type* MemberConstraint::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
   xylo_unreachable();
 }
 
 
-Type* FunctionType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
-  auto params_zonked = params_type_->Zonk(subst, strict, out_allocated);
-  auto return_zonked = return_type_->Zonk(subst, strict, out_allocated);
+Type* FunctionType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
+  auto params_zonked = params_type_->Zonk(subst, strict, arena);
+  auto return_zonked = return_type_->Zonk(subst, strict, arena);
 
   if (params_zonked == params_type_ && return_zonked == return_type_) {
     return this;
@@ -1702,17 +1701,17 @@ Type* FunctionType::Zonk(const Substitution* subst, bool strict, TypeSink* out_a
   }
 
   auto zonked_func = new FunctionType(closure_, params_zonked->As<TupleType>(), return_zonked);
-  out_allocated->adopt_type(TypePtr(zonked_func));
+  arena->adopt_type(TypePtr(zonked_func));
   return zonked_func;
 }
 
 
-Type* TupleType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
+Type* TupleType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
   auto zonked_tuple = new TupleType();
 
   bool changed = false;
   for (auto elem : elements_) {
-    auto zonked_elem = elem->Zonk(subst, strict, out_allocated);
+    auto zonked_elem = elem->Zonk(subst, strict, arena);
     zonked_tuple->add_element(zonked_elem);
     changed |= (zonked_elem != elem);
 
@@ -1723,7 +1722,7 @@ Type* TupleType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allo
   }
 
   if (changed) {
-    out_allocated->adopt_type(TypePtr(zonked_tuple));
+    arena->adopt_type(TypePtr(zonked_tuple));
     return zonked_tuple;
   } else {
     delete zonked_tuple;
@@ -1732,24 +1731,24 @@ Type* TupleType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allo
 }
 
 
-Type* IntersectionType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
+Type* IntersectionType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
   throw std::logic_error("not implemented: IntersectionType::Zonk");
 }
 
 
-Type* UnionType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
+Type* UnionType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
   throw std::logic_error("not implemented: UnionType::Zonk");
 }
 
 
-Type* TypeVariable::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
-  return subst->Apply(this, out_allocated);
+Type* TypeVariable::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
+  return subst->Apply(this, arena);
 }
 
 
-Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
+Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
   if (func_shape() != nullptr) {
-    return func_shape()->Zonk(subst, strict, out_allocated);
+    return func_shape()->Zonk(subst, strict, arena);
   }
 
   UnionType atoms;
@@ -1761,7 +1760,7 @@ Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeSink* out_al
         break;
 
       case Type::Kind::kTyvar: {
-        auto zonked = elem->Zonk(subst, strict, out_allocated);
+        auto zonked = elem->Zonk(subst, strict, arena);
         if (zonked->kind() == Type::Kind::kTyvar) {
           result.add_element(zonked);
         } else {
@@ -1799,7 +1798,7 @@ Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeSink* out_al
         return ErrorType::instance();
       } else {
         auto top_type = new IntersectionType();
-        out_allocated->adopt_type(TypePtr(top_type));
+        arena->adopt_type(TypePtr(top_type));
         return top_type;
       }
     }
@@ -1811,7 +1810,7 @@ Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeSink* out_al
         return ErrorType::instance();
       } else {
         auto bottom_type = new UnionType();
-        out_allocated->adopt_type(TypePtr(bottom_type));
+        arena->adopt_type(TypePtr(bottom_type));
         return bottom_type;
       }
     }
@@ -1829,7 +1828,7 @@ Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeSink* out_al
 }
 
 
-Type* TypeScheme::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
+Type* TypeScheme::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
   xylo_unreachable();
 }
 
@@ -1857,7 +1856,7 @@ bool Type::IsGroundType() const {
       return true;
     }
 
-    case Type::Kind::kMemberReq:
+    case Type::Kind::kMemberConstraint:
     case Type::Kind::kIntersection:
     case Type::Kind::kUnion:
     case Type::Kind::kTyvar:
@@ -1878,8 +1877,8 @@ std::string TypePrinter::Print(const Type* type, bool paren, Status* status) con
     case Type::Kind::kNominal:
       return Print(type->As<NominalType>(), paren, status);
 
-    case Type::Kind::kMemberReq:
-      return Print(type->As<MemberRequirement>(), paren, status);
+    case Type::Kind::kMemberConstraint:
+      return Print(type->As<MemberConstraint>(), paren, status);
 
     case Type::Kind::kFunction:
       return Print(type->As<FunctionType>(), paren, status);
@@ -1916,7 +1915,7 @@ std::string TypePrinter::Print(const NominalType* type, bool paren, Status* stat
 }
 
 
-std::string TypePrinter::Print(const MemberRequirement* type, bool paren, Status* status) const {
+std::string TypePrinter::Print(const MemberConstraint* type, bool paren, Status* status) const {
   std::string str = "";
 
   if (!options_.verbose && type->is_resolved()) {
@@ -2227,10 +2226,10 @@ std::string TypePrinter::PrintConstraints(Status* status) const {
         if (it != status->alias_map.end()) {
           ub = it->second;
         }
-        if (ub->kind() == Type::Kind::kMemberReq) {
-          auto memreq = ub->template As<MemberRequirement>();
-          if (memreq->is_resolved()) {
-            ub = memreq->origin_owner();
+        if (ub->kind() == Type::Kind::kMemberConstraint) {
+          auto memcon = ub->template As<MemberConstraint>();
+          if (memcon->is_resolved()) {
+            ub = memcon->origin_owner();
           }
         }
         if (ub == var) {

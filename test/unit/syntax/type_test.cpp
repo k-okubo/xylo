@@ -281,10 +281,10 @@ TEST(TypeTest, TypeMetavar_Linear_Single1) {
   EXPECT_TRUE(metavar3->IsSubtypeOf(base2_type));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), bar_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), bar_type);
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(metavar1),
@@ -332,10 +332,10 @@ TEST(TypeTest, TypeMetavar_Linear_Single2) {
   EXPECT_TRUE(metavar3->IsSubtypeOf(base2_type));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), bar_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), bar_type);
 
   delete metavar1;
   delete metavar2;
@@ -369,10 +369,10 @@ TEST(TypeTest, TypeMetavar_Linear_Sibling1) {
   EXPECT_FALSE(base2_type->IsSubtypeOf(metavar3));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), base2_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), base2_type);
 
   delete metavar1;
   delete metavar2;
@@ -403,10 +403,10 @@ TEST(TypeTest, TypeMetavar_Linear_Sibling2) {
   EXPECT_TRUE(baz_type->IsSubtypeOf(metavar3));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), base2_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), base2_type);
 
   delete metavar1;
   delete metavar2;
@@ -528,10 +528,10 @@ TEST(TypeTest, TypeMetavar_Circular_Single) {
   EXPECT_TRUE(bar_type->ConstrainSubtypeOf(metavar1));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), bar_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), bar_type);
 
   delete metavar1;
   delete metavar2;
@@ -556,10 +556,10 @@ TEST(TypeTest, TypeMetavar_Circular_Sibling1) {
   EXPECT_TRUE(baz_type->ConstrainSubtypeOf(metavar1));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), base2_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), base2_type);
 
   delete metavar1;
   delete metavar2;
@@ -584,10 +584,10 @@ TEST(TypeTest, TypeMetavar_Circular_Sibling2) {
   EXPECT_TRUE(baz_type->ConstrainSubtypeOf(metavar3));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), base2_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), base2_type);
 
   delete metavar1;
   delete metavar2;
@@ -611,10 +611,10 @@ TEST(TypeTest, TypeMetavar_Circular_Supertype1) {
   EXPECT_TRUE(metavar1->ConstrainSubtypeOf(base1_type));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), bar_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), bar_type);
 
   delete metavar1;
   delete metavar2;
@@ -638,10 +638,10 @@ TEST(TypeTest, TypeMetavar_Circular_Supertype2) {
   EXPECT_TRUE(metavar3->ConstrainSubtypeOf(base1_type));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), bar_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), bar_type);
 
   delete metavar1;
   delete metavar2;
@@ -750,12 +750,12 @@ TEST(TypeTest, TypeMetavar_Vshape_Single) {
   EXPECT_TRUE(bar_type->ConstrainSubtypeOf(metavar1));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar4->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar5->Zonk(&subst, true, &allocated), bar_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar4->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar5->Zonk(&subst, true, &arena), bar_type);
 
   delete metavar1;
   delete metavar2;
@@ -785,12 +785,12 @@ TEST(TypeTest, TypeMetavar_Vshape_Sibling1) {
   EXPECT_TRUE(baz_type->ConstrainSubtypeOf(metavar1));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar4->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar5->Zonk(&subst, true, &allocated), base2_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar4->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar5->Zonk(&subst, true, &arena), base2_type);
 
   delete metavar1;
   delete metavar2;
@@ -820,12 +820,12 @@ TEST(TypeTest, TypeMetavar_Vshape_Sibling2) {
   EXPECT_TRUE(baz_type->ConstrainSubtypeOf(metavar3));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar4->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar5->Zonk(&subst, true, &allocated), bar_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar4->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar5->Zonk(&subst, true, &arena), bar_type);
 
   delete metavar1;
   delete metavar2;
@@ -853,12 +853,12 @@ TEST(TypeTest, TypeMetavar_LambdaShape_Common) {
   EXPECT_TRUE(bar_type->ConstrainSubtypeOf(metavar4));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar4->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar5->Zonk(&subst, true, &allocated), bar_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar4->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar5->Zonk(&subst, true, &arena), bar_type);
 
   delete metavar1;
   delete metavar2;
@@ -888,12 +888,12 @@ TEST(TypeTest, TypeMetavar_LambdaShape_Sibling) {
   EXPECT_TRUE(baz_type->ConstrainSubtypeOf(metavar4));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar3->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar4->Zonk(&subst, true, &allocated), baz_type);
-  EXPECT_EQ(metavar5->Zonk(&subst, true, &allocated), baz_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar3->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar4->Zonk(&subst, true, &arena), baz_type);
+  EXPECT_EQ(metavar5->Zonk(&subst, true, &arena), baz_type);
 
   delete metavar1;
   delete metavar2;
@@ -1025,10 +1025,10 @@ TEST(TypeTest, FunctionVariable_Linear_Single1) {
   // EXPECT_FALSE(metavar3->IsSubtypeOf(func_foo_to_bar));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_TRUE(metavar1->Zonk(&subst, true, &allocated)->equals(func_foo_to_bar));
-  EXPECT_TRUE(metavar2->Zonk(&subst, true, &allocated)->equals(func_foo_to_bar));
-  EXPECT_TRUE(metavar3->Zonk(&subst, true, &allocated)->equals(func_foo_to_bar));
+  TypeArena arena;
+  EXPECT_TRUE(metavar1->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
+  EXPECT_TRUE(metavar2->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
+  EXPECT_TRUE(metavar3->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
 
   delete foo_param;
   delete func_foo_to_bar;
@@ -1064,10 +1064,10 @@ TEST(TypeTest, FunctionVariable_Linear_Single2) {
   // EXPECT_FALSE(metavar3->IsSubtypeOf(func_foo_to_bar));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_TRUE(metavar1->Zonk(&subst, true, &allocated)->equals(func_foo_to_bar));
-  EXPECT_TRUE(metavar2->Zonk(&subst, true, &allocated)->equals(func_foo_to_bar));
-  EXPECT_TRUE(metavar3->Zonk(&subst, true, &allocated)->equals(func_foo_to_bar));
+  TypeArena arena;
+  EXPECT_TRUE(metavar1->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
+  EXPECT_TRUE(metavar2->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
+  EXPECT_TRUE(metavar3->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
 
   delete foo_param;
   delete func_foo_to_bar;
@@ -1116,12 +1116,12 @@ TEST(TypeTest, FunctionVariable_LambdaShape_Sibling) {
   EXPECT_TRUE(metavar1->ConstrainSubtypeOf(func_foo_to_base1));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_TRUE(metavar1->Zonk(&subst, true, &allocated)->equals(func_foo_to_base2));
-  EXPECT_TRUE(metavar2->Zonk(&subst, true, &allocated)->equals(func_foo_to_bar));
-  EXPECT_TRUE(metavar3->Zonk(&subst, true, &allocated)->equals(func_foo_to_bar));
-  EXPECT_TRUE(metavar4->Zonk(&subst, true, &allocated)->equals(func_foo_to_baz));
-  EXPECT_TRUE(metavar5->Zonk(&subst, true, &allocated)->equals(func_foo_to_baz));
+  TypeArena arena;
+  EXPECT_TRUE(metavar1->Zonk(&subst, true, &arena)->equals(func_foo_to_base2));
+  EXPECT_TRUE(metavar2->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
+  EXPECT_TRUE(metavar3->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
+  EXPECT_TRUE(metavar4->Zonk(&subst, true, &arena)->equals(func_foo_to_baz));
+  EXPECT_TRUE(metavar5->Zonk(&subst, true, &arena)->equals(func_foo_to_baz));
 
   delete foo_param1;
   delete func_foo_to_bar;
@@ -1165,16 +1165,16 @@ TEST(TypeTest, FunctionVariable_PingPong1) {
   EXPECT_TRUE(bar_type->ConstrainSubtypeOf(metavarA));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavarA->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavarB->Zonk(&subst, true, &allocated), bar_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavarA->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavarB->Zonk(&subst, true, &arena), bar_type);
 
   TypePrinter printer({.verbose = true});
-  EXPECT_EQ(printer(func_metavar1_to_metavar2->Zonk(&subst, true, &allocated)), "Bar -> Bar");
-  EXPECT_EQ(printer(func_metavarA_to_metavarB->Zonk(&subst, true, &allocated)), "Bar -> Bar");
-  EXPECT_EQ(printer(middle_metavar->Zonk(&subst, true, &allocated)), "Bar -> Bar");
+  EXPECT_EQ(printer(func_metavar1_to_metavar2->Zonk(&subst, true, &arena)), "Bar -> Bar");
+  EXPECT_EQ(printer(func_metavarA_to_metavarB->Zonk(&subst, true, &arena)), "Bar -> Bar");
+  EXPECT_EQ(printer(middle_metavar->Zonk(&subst, true, &arena)), "Bar -> Bar");
 
   delete metavar1;
   delete metavar2;
@@ -1219,16 +1219,16 @@ TEST(TypeTest, FunctionVariable_PingPong2) {
   EXPECT_TRUE(bar_type->ConstrainSubtypeOf(metavarA));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(metavar1->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavar2->Zonk(&subst, true, &allocated), base2_type);
-  EXPECT_EQ(metavarA->Zonk(&subst, true, &allocated), bar_type);
-  EXPECT_EQ(metavarB->Zonk(&subst, true, &allocated), base2_type);
+  TypeArena arena;
+  EXPECT_EQ(metavar1->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavar2->Zonk(&subst, true, &arena), base2_type);
+  EXPECT_EQ(metavarA->Zonk(&subst, true, &arena), bar_type);
+  EXPECT_EQ(metavarB->Zonk(&subst, true, &arena), base2_type);
 
   TypePrinter printer({.verbose = true});
-  EXPECT_EQ(printer(func_metavar1_to_metavar2->Zonk(&subst, true, &allocated)), "Bar -> Base2");
-  EXPECT_EQ(printer(func_metavarA_to_metavarB->Zonk(&subst, true, &allocated)), "Bar -> Base2");
-  EXPECT_EQ(printer(middle_metavar->Zonk(&subst, true, &allocated)), "Bar -> Base2");
+  EXPECT_EQ(printer(func_metavar1_to_metavar2->Zonk(&subst, true, &arena)), "Bar -> Base2");
+  EXPECT_EQ(printer(func_metavarA_to_metavarB->Zonk(&subst, true, &arena)), "Bar -> Base2");
+  EXPECT_EQ(printer(middle_metavar->Zonk(&subst, true, &arena)), "Bar -> Base2");
 
   delete metavar1;
   delete metavar2;
@@ -1277,9 +1277,9 @@ TEST(TypeTest, FunctionVariable_RetSibling) {
   EXPECT_TRUE(baz_type->ConstrainSubtypeOf(metavar2));
 
   Substitution subst;
-  TypeSink allocated;
+  TypeArena arena;
   TypePrinter printer({.verbose = true});
-  EXPECT_EQ(printer(middle_metavar->Zonk(&subst, true, &allocated)), "Foo -> Base2");
+  EXPECT_EQ(printer(middle_metavar->Zonk(&subst, true, &arena)), "Foo -> Base2");
 
   delete metavar1;
   delete foo_param1;
@@ -1365,9 +1365,9 @@ TEST(TypeTest, FunctionVariable_ParamSibling) {
   EXPECT_TRUE(other_base_type->ConstrainSubtypeOf(metavar2));
 
   Substitution subst;
-  TypeSink allocated;
+  TypeArena arena;
   TypePrinter printer({.verbose = true});
-  EXPECT_EQ(printer(middle_metavar->Zonk(&subst, true, &allocated)), "Bar -> Foo");
+  EXPECT_EQ(printer(middle_metavar->Zonk(&subst, true, &arena)), "Bar -> Foo");
 
   delete other_base_type;
   delete metavar1;
@@ -1409,8 +1409,8 @@ TEST(TypeTest, FunctionVariable_ParamUnrelated) {
   EXPECT_TRUE(bar_type->ConstrainSubtypeOf(metavar2));
 
   Substitution subst;
-  TypeSink allocated;
-  EXPECT_EQ(middle_metavar->Zonk(&subst, true, &allocated)->kind(), Type::Kind::kError);
+  TypeArena arena;
+  EXPECT_EQ(middle_metavar->Zonk(&subst, true, &arena)->kind(), Type::Kind::kError);
 
   delete metavar1;
   delete metavar1_param;
@@ -1481,7 +1481,7 @@ TEST(TypeTest, FunctionVariable_ClosureRules) {
 }
 
 
-TEST(TypeTest, MemberRequirement_FromNominal) {
+TEST(TypeTest, MemberConstraint_FromNominal) {
   TestTypes types;
   auto bar_type = types.bar_type();
   auto ident_age = types.context()->InternIdentifier("age");
@@ -1496,21 +1496,21 @@ TEST(TypeTest, MemberRequirement_FromNominal) {
 
   // has member
   auto extvar = new TypeMetavar();
-  auto memreq = new MemberRequirement(ident_age, extvar);
+  auto memcon = new MemberConstraint(ident_age, extvar);
 
   // constrain member
-  EXPECT_TRUE(dog_type->ConstrainSubtypeOf(memreq));
+  EXPECT_TRUE(dog_type->ConstrainSubtypeOf(memcon));
   EXPECT_TRUE(extvar->IsSubtypeOf(bar_type));
   EXPECT_TRUE(bar_type->IsSubtypeOf(extvar));
 
   delete animal_type;
   delete dog_type;
   delete extvar;
-  delete memreq;
+  delete memcon;
 }
 
 
-TEST(TypeTest, MemberRequirement_FromTyvar) {
+TEST(TypeTest, MemberConstraint_FromTyvar) {
   TestTypes types;
   auto bar_type = types.bar_type();
   auto ident_age = types.context()->InternIdentifier("age");
@@ -1529,10 +1529,10 @@ TEST(TypeTest, MemberRequirement_FromTyvar) {
 
   // has member
   auto extvar = new TypeMetavar();
-  auto memreq = new MemberRequirement(ident_age, extvar);
+  auto memcon = new MemberConstraint(ident_age, extvar);
 
   // constrain member
-  EXPECT_TRUE(tyvar->ConstrainSubtypeOf(memreq));
+  EXPECT_TRUE(tyvar->ConstrainSubtypeOf(memcon));
   EXPECT_TRUE(extvar->IsSubtypeOf(bar_type));
   EXPECT_TRUE(bar_type->IsSubtypeOf(extvar));
 
@@ -1540,11 +1540,11 @@ TEST(TypeTest, MemberRequirement_FromTyvar) {
   delete dog_type;
   delete tyvar;
   delete extvar;
-  delete memreq;
+  delete memcon;
 }
 
 
-TEST(TypeTest, MemberRequirement_FakeSubtyping) {
+TEST(TypeTest, MemberConstraint_FakeSubtyping) {
   TestTypes types;
   auto bar_type = types.bar_type();
   auto ident_name = types.context()->InternIdentifier("name");
@@ -1569,17 +1569,17 @@ TEST(TypeTest, MemberRequirement_FakeSubtyping) {
 
   // has member
   auto extvar = new TypeMetavar();
-  auto memreq = new MemberRequirement(ident_name, extvar);
+  auto memcon = new MemberConstraint(ident_name, extvar);
 
   // constrain member
-  EXPECT_FALSE(metavar->ConstrainSubtypeOf(memreq));
+  EXPECT_FALSE(metavar->ConstrainSubtypeOf(memcon));
 
   delete animal_type;
   delete dog_type;
   delete cat_type;
   delete metavar;
   delete extvar;
-  delete memreq;
+  delete memcon;
 }
 
 

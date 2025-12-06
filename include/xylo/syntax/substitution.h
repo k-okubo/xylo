@@ -11,7 +11,7 @@ namespace xylo {
 
 class Type;
 class TypeVariable;
-class TypeSink;
+class TypeArena;
 
 class Substitution {
  public:
@@ -27,7 +27,7 @@ class Substitution {
   void insert(const TypeVariable* var, Type* type) { subst_.emplace(var, type); }
   const Map<const TypeVariable*, Type*>& entries() const { return subst_; }
 
-  Type* Apply(Type* type, TypeSink* out_allocated) const;
+  Type* Apply(Type* type, TypeArena* arena) const;
 
  private:
   const Substitution* parent_;

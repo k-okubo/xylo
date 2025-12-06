@@ -24,7 +24,7 @@ llvm::Type* TypeConverter::Convert(xylo::Type* type, bool function_as_pointer) {
       return llvm::Type::getInt64Ty(llvm_context_);
 
     case xylo::Type::Kind::kError:
-    case xylo::Type::Kind::kMemberReq:
+    case xylo::Type::Kind::kMemberConstraint:
     case xylo::Type::Kind::kTuple:
     case xylo::Type::Kind::kTyvar:
     case xylo::Type::Kind::kMetavar:

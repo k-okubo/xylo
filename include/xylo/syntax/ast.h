@@ -497,7 +497,7 @@ class LetStatement : public Statement {
 };
 
 
-class VarStatement : public Statement, public TypeSink {
+class VarStatement : public Statement, public TypeArena {
  public:
   static auto Create(SymbolPtr&& symbol, ExpressionPtr&& expr) {
     auto p = new VarStatement(std::move(symbol), std::move(expr));
@@ -540,7 +540,7 @@ class ReturnStatement : public Statement {
 };
 
 
-class Expression : public TypeSink, public Downcastable {
+class Expression : public TypeArena, public Downcastable {
  public:
   enum class Kind {
     kNull,
@@ -974,15 +974,15 @@ class SelectExpression : public Expression {
       Expression(Kind::kSelect),
       object_(std::move(object)),
       member_name_(member_name),
-      member_req_(nullptr),
+      member_constraint_(nullptr),
       lvalue_(false) {}
 
  public:
   Expression* object() const { return object_.get(); }
   Identifier* member_name() const { return member_name_; }
 
-  MemberRequirement* member_req() const { return member_req_; }
-  void set_member_req(MemberRequirement* member_req) { member_req_ = member_req; }
+  MemberConstraint* member_constraint() const { return member_constraint_; }
+  void set_member_constraint(MemberConstraint* member_constraint) { member_constraint_ = member_constraint; }
 
   bool is_lvalue() const { return lvalue_; }
   void set_lvalue(bool lvalue) { lvalue_ = lvalue; }
@@ -990,7 +990,7 @@ class SelectExpression : public Expression {
  private:
   ExpressionPtr object_;
   Identifier* member_name_;
-  MemberRequirement* member_req_;
+  MemberConstraint* member_constraint_;
   bool lvalue_;
 };
 

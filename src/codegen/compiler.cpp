@@ -154,9 +154,9 @@ Symbol* Compiler::FindMainSymbol(FileAST* file_ast) {
 bool Compiler::CreateMainTypeArgs(Symbol* main_symbol, Vector<Type*>* out_type_args) {
   xylo_contract(out_type_args->empty());
 
-  TypeSink allocated;
+  TypeArena arena;
   Vector<TypeMetavar*> instanciated_vars;
-  auto main_func_type = main_symbol->type()->Instantiate(&allocated, &instanciated_vars);
+  auto main_func_type = main_symbol->type()->Instantiate(&arena, &instanciated_vars);
 
   TupleType param_type;
   TypeMetavar return_type;
@@ -180,7 +180,7 @@ bool Compiler::CreateMainTypeArgs(Symbol* main_symbol, Vector<Type*>* out_type_a
 
   Substitution empty_subst;
   for (auto* var : instanciated_vars) {
-    out_type_args->push_back(var->Zonk(&empty_subst, false, &allocated));
+    out_type_args->push_back(var->Zonk(&empty_subst, false, &arena));
   }
 
   return true;

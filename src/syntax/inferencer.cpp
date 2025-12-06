@@ -1117,10 +1117,27 @@ void Inferencer::VisitSelectExpression(SelectExpression* expr, InferenceContext*
 
   memcon->set_on_error([this, expr](const NominalType* nominal) {
     auto member_info = nominal->GetMember(expr->member_name());
-    if (member_info == nullptr) {
-      ReportError(expr->position(), "cannot find member '" + expr->member_name()->str().cpp_str() + "'");
-    } else {
+    if (member_info != nullptr) {
       ReportError(expr->position(), "member '" + expr->member_name()->str().cpp_str() + "' has incompatible type");
+
+    } else {
+      Vector<MemberInfo*> embedded_members;
+      nominal->FindEmbededMembers(expr->member_name(), &embedded_members);
+
+      if (embedded_members.empty()) {
+        ReportError(expr->position(), "cannot find member '" + expr->member_name()->str().cpp_str() + "'");
+      } else {
+        ReportError(expr->position(), "member '" + expr->member_name()->str().cpp_str() + "' is ambiguous");
+
+        std::string candidate_classes;
+        for (size_t i = 0; i < embedded_members.size(); ++i) {
+          candidate_classes += "'" + embedded_members[i]->owner()->name()->str().cpp_str() + "'";
+          if (i + 1 < embedded_members.size()) {
+            candidate_classes += ", ";
+          }
+        }
+        ReportNote(SourceRange(), "candidates are from " + candidate_classes);
+      }
     }
   });
 

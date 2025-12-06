@@ -27,13 +27,14 @@ struct Diagnostic {
   friend std::ostream& operator<<(std::ostream& stream, const Diagnostic& diagnostic) {
     auto& position = diagnostic.position;
 
-    if (position.file != nullptr) {
-      stream << position.file->path() << ":";
-    } else {
-      stream << "<input>:";
+    if (position.start.line > 0) {
+      if (position.file != nullptr) {
+        stream << position.file->path() << ":";
+      } else {
+        stream << "<input>:";
+      }
+      stream << position.start.line << ":" << position.start.column << ": ";
     }
-
-    stream << position.start.line << ":" << position.start.column << ": ";
 
     switch (diagnostic.severity) {
       case DiagnosticSeverity::kError:

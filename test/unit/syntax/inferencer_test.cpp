@@ -2455,10 +2455,12 @@ TEST(InferencerTest, Embedding_AmbiguousField) {
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_TRUE(inferencer.has_diagnostics());
-  EXPECT_EQ(inferencer.diagnostics().size(), 1);
-  EXPECT_EQ(inferencer.diagnostics()[0].message, "cannot find member 'b'");
+  ASSERT_EQ(inferencer.diagnostics().size(), 2);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "member 'b' is ambiguous");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 13);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 19);
+
+  EXPECT_EQ(inferencer.diagnostics()[1].message, "candidates are from 'Bar', 'Baz'");
 }
 
 

@@ -689,7 +689,7 @@ ExpressionPtr Parser::ParseUnaryExpression(Scope* scope, int min_precedence) {
         if (Expect(Token::kIdentifier)) {
           auto field_name = LastTokenValue().as_identifier;
           auto& field_ident_pos = LastTokenPosition();
-          lhs = ProjectionExpression::Create(std::move(lhs), field_name);
+          lhs = SelectExpression::Create(std::move(lhs), field_name);
           lhs->set_position(field_ident_pos);
         } else {
           Synchronize(kExpressionEndTokens);

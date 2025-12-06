@@ -13,16 +13,16 @@ namespace xylo {
 
 class FunctionLowerer : public DeclarationLowerer {
  public:
-  FunctionLowerer(LoweringNode* parent, SubstitutionPtr&& type_env, FunctionExpression* xylo_func) :
-      DeclarationLowerer(Kind::kFunction, parent, std::move(type_env)),
+  FunctionLowerer(LoweringNode* parent, SubstitutionPtr&& subst, FunctionExpression* xylo_func) :
+      DeclarationLowerer(Kind::kFunction, parent, std::move(subst)),
       xylo_func_(xylo_func),
       func_name_(),
       llvm_func_(nullptr),
       builder_(llvm_context()),
       variable_value_map_(),
-      closure_env_ptr_(nullptr),
-      heap_frame_type_(nullptr),
-      heap_frame_ptr_(nullptr) {}
+      outer_env_ptr_(nullptr),
+      inner_env_type_(nullptr),
+      inner_env_ptr_(nullptr) {}
 
   ~FunctionLowerer() = default;
 
@@ -32,14 +32,14 @@ class FunctionLowerer : public DeclarationLowerer {
 
   const String& mangled_name() const override { return func_name_; }
   int scope_depth() const override { return xylo_func()->scope()->depth(); }
-  llvm::StructType* scope_data_type() const override { return heap_frame_type(); }
+  llvm::StructType* scope_data_type() const override { return inner_env_type(); }
 
   llvm::Function* GetOrBuildFunction();
   llvm::Function* CreatePrototype();
   void BuildBody(llvm::Function* function);
 
  protected:
-  void BuildHeapFrame();
+  void BuildInnerEnv();
 
   llvm::Value* BuildBlock(Block* block);
   llvm::Value* BuildStatement(Statement* stmt);
@@ -53,7 +53,7 @@ class FunctionLowerer : public DeclarationLowerer {
   llvm::Value* BuildLiteralExpression(LiteralExpression* expr);
   llvm::Value* BuildThisExpression(ThisExpression* expr);
   llvm::Value* BuildIdentifierExpression(IdentifierExpression* expr, llvm::Value** out_closure_env);
-  llvm::Value* BuildClosureEnvIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env);
+  llvm::Value* BuildOuterEnvIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env);
   llvm::Value* BuildLocalValueIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env);
   llvm::Value* BuildFunctionIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env);
   llvm::Value* BuildFunctionExpression(FunctionExpression* expr);
@@ -62,9 +62,9 @@ class FunctionLowerer : public DeclarationLowerer {
   llvm::Value* BuildBinaryExpression(BinaryExpression* expr);
   llvm::Value* BuildConditionalExpression(ConditionalExpression* expr);
   llvm::Value* BuildConstructExpression(ConstructExpression* expr);
-  llvm::Value* BuildProjectionExpression(ProjectionExpression* expr, llvm::Value** out_closure_env);
-  llvm::Value* BuildClassProjection(ProjectionExpression* expr, NominalType* type, llvm::Value** out_closure_env);
-  llvm::Value* BuildInterfaceProjection(ProjectionExpression* expr, NominalType* type, llvm::Value** out_closure_env);
+  llvm::Value* BuildSelectExpression(SelectExpression* expr, llvm::Value** out_closure_env);
+  llvm::Value* BuildClassSelect(SelectExpression* expr, NominalType* type, llvm::Value** out_closure_env);
+  llvm::Value* BuildInterfaceSelect(SelectExpression* expr, NominalType* type, llvm::Value** out_closure_env);
   llvm::Value* BuildBlockExpression(BlockExpression* expr);
 
   void BuildExpressionInitializer(ExpressionInitializer* init, xylo::Type* var_type, llvm::Value* ptr);
@@ -76,31 +76,32 @@ class FunctionLowerer : public DeclarationLowerer {
   llvm::Value* ZonkAndAdjustType(llvm::Value* value, xylo::Type* from_type, xylo::Type* to_type);
   llvm::Value* AdjustType(llvm::Value* value, xylo::Type* zonked_from_type, xylo::Type* zonked_to_type);
 
-  llvm::Value* closure_env_ptr() const { return closure_env_ptr_; }
-  void set_closure_env_ptr(llvm::Value* ptr) { closure_env_ptr_ = ptr; }
+  llvm::Value* outer_env_ptr() const { return outer_env_ptr_; }
+  void set_outer_env_ptr(llvm::Value* ptr) { outer_env_ptr_ = ptr; }
 
-  llvm::Value* heap_frame_ptr() const { return heap_frame_ptr_; }
-  void set_heap_frame_ptr(llvm::Value* ptr) { heap_frame_ptr_ = ptr; }
+  llvm::Value* inner_env_ptr() const { return inner_env_ptr_; }
+  void set_inner_env_ptr(llvm::Value* ptr) { inner_env_ptr_ = ptr; }
 
-  llvm::StructType* heap_frame_type() const { return heap_frame_type_; }
-  void set_heap_frame_type(llvm::StructType* type) { heap_frame_type_ = type; }
+  llvm::StructType* inner_env_type() const { return inner_env_type_; }
+  void set_inner_env_type(llvm::StructType* type) { inner_env_type_ = type; }
 
   llvm::Value* null_ptr() const { return llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(llvm_context())); }
 
   llvm::Value* BuildHeapAlloc(llvm::Type* type);
   llvm::Value* StoreCapturedValue(Symbol* symbol, llvm::Value* value);
-  llvm::Value* StoreToHeapFrame(int index, llvm::Value* value);
+  llvm::Value* StoreToInnerEnv(int index, llvm::Value* value);
+
   llvm::Value* LoadThisPointer();
-  std::pair<llvm::Value*, llvm::StructType*> LoadClosureEnvironmentPtr(Symbol* symbol);
-  std::pair<llvm::Value*, llvm::Type*> LoadClosureEnvironmentValuePtr(Symbol* symbol);
+  std::pair<llvm::Value*, llvm::StructType*> LoadOuterEnvironmentPtr(Symbol* symbol);
+  std::pair<llvm::Value*, llvm::Type*> LoadOuterEnvironmentValuePtr(Symbol* symbol);
 
-  llvm::Value* BuildClosurePointer(llvm::Value* function, llvm::Value* env_ptr);
-  llvm::Value* LoadFunctionPtrFromClosurePointer(llvm::Value* closure_ptr);
-  llvm::Value* LoadEnvironmentPtrFromClosurePointer(llvm::Value* closure_ptr);
+  llvm::Value* BuildClosureObject(llvm::Value* func_ptr, llvm::Value* env_ptr);
+  llvm::Value* LoadFunctionPtrFromClosureObject(llvm::Value* closure_obj);
+  llvm::Value* LoadEnvironmentPtrFromClosureObject(llvm::Value* closure_obj);
 
-  llvm::Value* BuildInterfacePointer(llvm::Value* obj_ptr, llvm::Value* vtable_ptr);
-  llvm::Value* LoadObjectPtrFromInterfacePointer(llvm::Value* interface_ptr);
-  llvm::Value* LoadVTablePtrFromInterfacePointer(llvm::Value* interface_ptr);
+  llvm::Value* BuildInterfaceFatptr(llvm::Value* obj_ptr, llvm::Value* vtable_ptr);
+  llvm::Value* LoadObjectPtrFromInterfaceFatptr(llvm::Value* fatptr);
+  llvm::Value* LoadVTablePtrFromInterfaceFatptr(llvm::Value* fatptr);
 
  private:
   FunctionExpression* xylo_func_;
@@ -110,9 +111,9 @@ class FunctionLowerer : public DeclarationLowerer {
   llvm::IRBuilder<> builder_;
   Map<Symbol*, llvm::Value*> variable_value_map_;
 
-  llvm::Value* closure_env_ptr_;
-  llvm::StructType* heap_frame_type_;
-  llvm::Value* heap_frame_ptr_;
+  llvm::Value* outer_env_ptr_;
+  llvm::StructType* inner_env_type_;
+  llvm::Value* inner_env_ptr_;
 };
 
 

@@ -63,7 +63,7 @@ llvm::Type* TypeConverter::ConvertFunctionType(xylo::FunctionType* type, bool as
   }
 
   xylo::Vector<llvm::Type*> param_types;
-  param_types.push_back(PointerType());  // closure environment
+  param_types.push_back(PointerType());  // outer environment
   for (auto elem : type->params_type()->elements()) {
     param_types.push_back(Convert(elem, true));
   }

@@ -11,8 +11,8 @@ namespace xylo {
 
 class ClassLowerer : public DeclarationLowerer {
  public:
-  ClassLowerer(LoweringNode* parent, SubstitutionPtr&& type_env, ClassDeclaration* class_decl) :
-      DeclarationLowerer(Kind::kClass, parent, std::move(type_env)),
+  ClassLowerer(LoweringNode* parent, SubstitutionPtr&& subst, ClassDeclaration* class_decl) :
+      DeclarationLowerer(Kind::kClass, parent, std::move(subst)),
       class_decl_(class_decl),
       class_name_(),
       instance_struct_(nullptr),

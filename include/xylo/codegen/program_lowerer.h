@@ -16,8 +16,8 @@ class ProgramLowerer : public LoweringNode {
       LoweringNode(Kind::kProgram, this),
       xylo_context_(xylo_context),
       llvm_module_(llvm_module),
-      closure_ptr_type_(nullptr),
-      interface_ptr_type_(nullptr),
+      closure_object_type_(nullptr),
+      interface_fatptr_type_(nullptr),
       xylo_malloc_(nullptr),
       interface_lowerers_(),
       class_lowerers_() {}
@@ -29,8 +29,8 @@ class ProgramLowerer : public LoweringNode {
   llvm::LLVMContext& llvm_context() const { return llvm_module()->getContext(); }
 
   llvm::IntegerType* size_type();
-  llvm::StructType* closure_ptr_type();
-  llvm::StructType* interface_ptr_type();
+  llvm::StructType* closure_object_type();
+  llvm::StructType* interface_fatptr_type();
   llvm::Function* xylo_malloc();
 
   const String& mangled_name() const override {
@@ -54,8 +54,8 @@ class ProgramLowerer : public LoweringNode {
   XyloContext* xylo_context_;
   llvm::Module* llvm_module_;
 
-  llvm::StructType* closure_ptr_type_;
-  llvm::StructType* interface_ptr_type_;
+  llvm::StructType* closure_object_type_;
+  llvm::StructType* interface_fatptr_type_;
   llvm::Function* xylo_malloc_;
 
   Map<NominalType*, InterfaceLowerer*> interface_lowerers_;

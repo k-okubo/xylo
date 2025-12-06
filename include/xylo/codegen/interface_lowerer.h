@@ -11,8 +11,8 @@ namespace xylo {
 
 class InterfaceLowerer : public DeclarationLowerer {
  public:
-  InterfaceLowerer(LoweringNode* parent, SubstitutionPtr&& type_env, InterfaceDeclaration* interface_decl) :
-      DeclarationLowerer(Kind::kInterface, parent, std::move(type_env)),
+  InterfaceLowerer(LoweringNode* parent, SubstitutionPtr&& subst, InterfaceDeclaration* interface_decl) :
+      DeclarationLowerer(Kind::kInterface, parent, std::move(subst)),
       interface_decl_(interface_decl),
       interface_name_(),
       vtable_struct_(nullptr) {}

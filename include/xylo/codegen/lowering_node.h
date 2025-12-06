@@ -35,11 +35,11 @@ class LoweringNode {
 
   using TypeVec = Vector<Type*>;
 
-  LoweringNode(Kind kind, LoweringNode* parent, SubstitutionPtr&& type_env) :
+  LoweringNode(Kind kind, LoweringNode* parent, SubstitutionPtr&& subst) :
       kind_(kind),
       root_(parent->root()),
       parent_(parent),
-      type_env_(std::move(type_env)),
+      subst_(std::move(subst)),
       children_(),
       interface_decls_(),
       class_decls_(),
@@ -52,7 +52,7 @@ class LoweringNode {
       kind_(kind),
       root_(root),
       parent_(nullptr),
-      type_env_(nullptr),
+      subst_(nullptr),
       children_(),
       interface_decls_(),
       class_decls_(),
@@ -67,7 +67,7 @@ class LoweringNode {
   Kind kind() const { return kind_; }
   ProgramLowerer* root() const { return root_; }
   LoweringNode* parent() const { return parent_; }
-  const Substitution* type_env() const { return type_env_.get(); }
+  const Substitution* subst() const { return subst_.get(); }
 
   void add_child(LoweringNodePtr&& child) { children_.push_back(std::move(child)); }
 
@@ -87,7 +87,7 @@ class LoweringNode {
   llvm::StructType* GetOrCreateInstanceStruct(Symbol* symbol);
   llvm::Function* GetOrBuildMethod(xylo::NominalType* type, Identifier* name, const TypeVec& type_args);
   llvm::Function* GetOrBuildFunction(Symbol* symbol, const TypeVec& type_args);
-  SubstitutionPtr ExtendTypeEnv(FunctionDeclaration* func_decl, const TypeVec& type_args);
+  SubstitutionPtr ExtendSubstitution(FunctionDeclaration* func_decl, const TypeVec& type_args);
 
   llvm::StructType* GetVTableStruct(xylo::NominalType* type);
   llvm::StructType* GetInstanceStruct(xylo::NominalType* type);
@@ -96,7 +96,7 @@ class LoweringNode {
   Kind kind_;
   ProgramLowerer* root_;
   LoweringNode* parent_;
-  SubstitutionPtr type_env_;
+  SubstitutionPtr subst_;
   Vector<LoweringNodePtr> children_;
 
   Map<Symbol*, InterfaceDeclaration*> interface_decls_;

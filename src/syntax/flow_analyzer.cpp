@@ -141,8 +141,8 @@ void FlowAnalyzer::VisitExpression(Expression* expr, FlowState* state) {
       VisitConstructExpression(expr->As<ConstructExpression>(), state);
       break;
 
-    case Expression::Kind::kProjection:
-      VisitProjectionExpression(expr->As<ProjectionExpression>(), state);
+    case Expression::Kind::kSelect:
+      VisitSelectExpression(expr->As<SelectExpression>(), state);
       break;
 
     case Expression::Kind::kBlock:
@@ -213,7 +213,7 @@ void FlowAnalyzer::VisitConstructExpression(ConstructExpression* expr, FlowState
 }
 
 
-void FlowAnalyzer::VisitProjectionExpression(ProjectionExpression* expr, FlowState* state) {
+void FlowAnalyzer::VisitSelectExpression(SelectExpression* expr, FlowState* state) {
   VisitExpression(expr->object(), state);
 }
 

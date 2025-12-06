@@ -1672,24 +1672,24 @@ static void FindCommonAncestors(const UnionType* types, Vector<Type*>* out_ances
 }
 
 
-Type* ErrorType::Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) {
+Type* ErrorType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
   return this;
 }
 
 
-Type* NominalType::Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) {
+Type* NominalType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
   return this;
 }
 
 
-Type* MemberRequirement::Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) {
+Type* MemberRequirement::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
   xylo_unreachable();
 }
 
 
-Type* FunctionType::Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) {
-  auto params_zonked = params_type_->Zonk(env, strict, out_allocated);
-  auto return_zonked = return_type_->Zonk(env, strict, out_allocated);
+Type* FunctionType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
+  auto params_zonked = params_type_->Zonk(subst, strict, out_allocated);
+  auto return_zonked = return_type_->Zonk(subst, strict, out_allocated);
 
   if (params_zonked == params_type_ && return_zonked == return_type_) {
     return this;
@@ -1707,12 +1707,12 @@ Type* FunctionType::Zonk(const Substitution* env, bool strict, TypeSink* out_all
 }
 
 
-Type* TupleType::Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) {
+Type* TupleType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
   auto zonked_tuple = new TupleType();
 
   bool changed = false;
   for (auto elem : elements_) {
-    auto zonked_elem = elem->Zonk(env, strict, out_allocated);
+    auto zonked_elem = elem->Zonk(subst, strict, out_allocated);
     zonked_tuple->add_element(zonked_elem);
     changed |= (zonked_elem != elem);
 
@@ -1732,24 +1732,24 @@ Type* TupleType::Zonk(const Substitution* env, bool strict, TypeSink* out_alloca
 }
 
 
-Type* IntersectionType::Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) {
+Type* IntersectionType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
   throw std::logic_error("not implemented: IntersectionType::Zonk");
 }
 
 
-Type* UnionType::Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) {
+Type* UnionType::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
   throw std::logic_error("not implemented: UnionType::Zonk");
 }
 
 
-Type* TypeVariable::Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) {
-  return env->Apply(this, out_allocated);
+Type* TypeVariable::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
+  return subst->Apply(this, out_allocated);
 }
 
 
-Type* TypeMetavar::Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) {
+Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
   if (func_shape() != nullptr) {
-    return func_shape()->Zonk(env, strict, out_allocated);
+    return func_shape()->Zonk(subst, strict, out_allocated);
   }
 
   UnionType atoms;
@@ -1761,7 +1761,7 @@ Type* TypeMetavar::Zonk(const Substitution* env, bool strict, TypeSink* out_allo
         break;
 
       case Type::Kind::kTyvar: {
-        auto zonked = elem->Zonk(env, strict, out_allocated);
+        auto zonked = elem->Zonk(subst, strict, out_allocated);
         if (zonked->kind() == Type::Kind::kTyvar) {
           result.add_element(zonked);
         } else {
@@ -1829,7 +1829,7 @@ Type* TypeMetavar::Zonk(const Substitution* env, bool strict, TypeSink* out_allo
 }
 
 
-Type* TypeScheme::Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) {
+Type* TypeScheme::Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) {
   xylo_unreachable();
 }
 

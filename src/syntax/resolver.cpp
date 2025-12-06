@@ -279,8 +279,8 @@ void Resolver::VisitExpression(Expression* expr, ResolutionContext* ctx) {
       VisitConstructExpression(expr->As<ConstructExpression>(), ctx);
       break;
 
-    case Expression::Kind::kProjection:
-      VisitProjectionExpression(expr->As<ProjectionExpression>(), ctx);
+    case Expression::Kind::kSelect:
+      VisitSelectExpression(expr->As<SelectExpression>(), ctx);
       break;
 
     case Expression::Kind::kBlock:
@@ -424,7 +424,7 @@ void Resolver::VisitConstructExpression(ConstructExpression* expr, ResolutionCon
 }
 
 
-void Resolver::VisitProjectionExpression(ProjectionExpression* expr, ResolutionContext* ctx) {
+void Resolver::VisitSelectExpression(SelectExpression* expr, ResolutionContext* ctx) {
   VisitExpression(expr->object(), ctx);
 }
 

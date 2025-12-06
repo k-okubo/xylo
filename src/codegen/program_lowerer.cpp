@@ -74,25 +74,25 @@ llvm::IntegerType* ProgramLowerer::size_type() {
 }
 
 
-llvm::StructType* ProgramLowerer::closure_ptr_type() {
-  if (closure_ptr_type_ != nullptr) {
-    return closure_ptr_type_;
+llvm::StructType* ProgramLowerer::closure_object_type() {
+  if (closure_object_type_ != nullptr) {
+    return closure_object_type_;
   }
 
   auto ptr_type = llvm::PointerType::getUnqual(llvm_context());
-  closure_ptr_type_ = llvm::StructType::create(llvm_context(), {ptr_type, ptr_type}, "ClosurePointer");
-  return closure_ptr_type_;
+  closure_object_type_ = llvm::StructType::create(llvm_context(), {ptr_type, ptr_type}, "ClosureObject");
+  return closure_object_type_;
 }
 
 
-llvm::StructType* ProgramLowerer::interface_ptr_type() {
-  if (interface_ptr_type_ != nullptr) {
-    return interface_ptr_type_;
+llvm::StructType* ProgramLowerer::interface_fatptr_type() {
+  if (interface_fatptr_type_ != nullptr) {
+    return interface_fatptr_type_;
   }
 
   auto ptr_type = llvm::PointerType::getUnqual(llvm_context());
-  interface_ptr_type_ = llvm::StructType::create(llvm_context(), {ptr_type, ptr_type}, "InterfacePointer");
-  return interface_ptr_type_;
+  interface_fatptr_type_ = llvm::StructType::create(llvm_context(), {ptr_type, ptr_type}, "InterfaceFatPointer");
+  return interface_fatptr_type_;
 }
 
 

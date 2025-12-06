@@ -45,7 +45,7 @@ llvm::StructType* ClassLowerer::CreateInstanceStruct() {
 
   auto entries_count = nominal->embeddings().size() + nominal->fields().size() + 1;
   Vector<llvm::Type*> struct_entries(entries_count);
-  struct_entries[0] = tc.PointerType();  // closure environment
+  struct_entries[0] = tc.PointerType();  // reserved: outer environment
 
   for (auto embedding : nominal->embeddings()) {
     auto embed_type = embedding->type()->As<NominalType>();

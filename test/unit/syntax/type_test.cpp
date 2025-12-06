@@ -1481,7 +1481,7 @@ TEST(TypeTest, FunctionVariable_ClosureRules) {
 }
 
 
-TEST(TypeTest, ExtractField_FromNominal) {
+TEST(TypeTest, MemberRequirement_FromNominal) {
   TestTypes types;
   auto bar_type = types.bar_type();
   auto ident_age = types.context()->InternIdentifier("age");
@@ -1510,7 +1510,7 @@ TEST(TypeTest, ExtractField_FromNominal) {
 }
 
 
-TEST(TypeTest, ExtractField_FromTyvar) {
+TEST(TypeTest, MemberRequirement_FromTyvar) {
   TestTypes types;
   auto bar_type = types.bar_type();
   auto ident_age = types.context()->InternIdentifier("age");
@@ -1544,7 +1544,7 @@ TEST(TypeTest, ExtractField_FromTyvar) {
 }
 
 
-TEST(TypeTest, ExtractField_FakeSubtyping) {
+TEST(TypeTest, MemberRequirement_FakeSubtyping) {
   TestTypes types;
   auto bar_type = types.bar_type();
   auto ident_name = types.context()->InternIdentifier("name");

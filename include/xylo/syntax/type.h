@@ -125,7 +125,7 @@ class Type : public TypeSink, public Downcastable {
   Type* Generalize(int depth, TypeSink* out_allocated);
   virtual Type* Instantiate(TypeSink* out_allocated, Vector<TypeMetavar*>* out_instantiated_vars) const;
 
-  virtual Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) = 0;
+  virtual Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) = 0;
   bool IsGroundType() const;
 
  private:
@@ -147,7 +147,7 @@ class ErrorType : public Type {
  public:
   bool equals(const Type* other) const override;
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
 };
 
 
@@ -196,7 +196,7 @@ class NominalType : public Type {
   bool AddSuper(NominalType* clazz);
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
 
  private:
   Category category_;
@@ -325,7 +325,7 @@ class MemberRequirement : public Type {
   }
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
 
  private:
   Identifier* name_;
@@ -356,7 +356,7 @@ class FunctionType : public Type {
   bool is_function_type() const override { return true; }
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
 
  private:
   bool closure_;
@@ -382,7 +382,7 @@ class TupleType : public Type {
   bool equals(const Type* other) const override;
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
 
  private:
   Vector<Type*> elements_;
@@ -414,7 +414,7 @@ class IntersectionType : public Type {
   void ShrinkToLower();
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
 
  private:
   Vector<Type*> elements_;
@@ -447,7 +447,7 @@ class UnionType : public Type {
   void ShrinkToUpper();
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
 
  private:
   Vector<Type*> elements_;
@@ -537,7 +537,7 @@ class TypeVariable : public Type {
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
   void PruneInnerScopeVars();
-  Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
 
  protected:
   bool CanConstrainUpperBound(const Type* new_ub, TypePairSet* visited) const {
@@ -585,7 +585,7 @@ class TypeMetavar : public Type {
   bool is_var_type() const override { return true; }
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
-  Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
 
  protected:
   void set_upper_bound(IntersectionTypePtr&& upper_bound) { varbase_.set_upper_bound(std::move(upper_bound)); }
@@ -629,7 +629,7 @@ class TypeScheme : public Type {
 
   Type* CloseOverMetavars(int depth, TypeSink* out_allocated) override;
   Type* Instantiate(TypeSink* out_allocated, Vector<TypeMetavar*>* out_instantiated_vars) const override;
-  Type* Zonk(const Substitution* env, bool strict, TypeSink* out_allocated) override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeSink* out_allocated) override;
 
  private:
   Vector<TypeVariable*> vars_;

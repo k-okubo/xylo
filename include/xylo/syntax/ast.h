@@ -554,7 +554,7 @@ class Expression : public TypeSink, public Downcastable {
     kBinary,
     kConditional,
     kConstruct,
-    kProjection,
+    kSelect,
     kBlock,
   };
 
@@ -962,16 +962,16 @@ class ConstructExpression : public Expression {
 };
 
 
-class ProjectionExpression : public Expression {
+class SelectExpression : public Expression {
  public:
   static auto Create(ExpressionPtr&& object, Identifier* member_name) {
-    auto p = new ProjectionExpression(std::move(object), member_name);
-    return std::unique_ptr<ProjectionExpression>(p);
+    auto p = new SelectExpression(std::move(object), member_name);
+    return std::unique_ptr<SelectExpression>(p);
   }
 
  protected:
-  explicit ProjectionExpression(ExpressionPtr&& object, Identifier* member_name) :
-      Expression(Kind::kProjection),
+  explicit SelectExpression(ExpressionPtr&& object, Identifier* member_name) :
+      Expression(Kind::kSelect),
       object_(std::move(object)),
       member_name_(member_name),
       member_req_(nullptr),

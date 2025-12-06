@@ -167,8 +167,8 @@ llvm::StructType* LoweringNode::GetOrCreateVTableStruct(Symbol* symbol) {
 
       // found
       auto interface_decl = decl_it->second;
-      auto ext_env = std::make_unique<Substitution>(lowerer->type_env());
-      interface_lowerer = new InterfaceLowerer(lowerer, std::move(ext_env), interface_decl);
+      auto ext_subst = std::make_unique<Substitution>(lowerer->subst());
+      interface_lowerer = new InterfaceLowerer(lowerer, std::move(ext_subst), interface_decl);
       interface_lowerer->set_interface_name(ChildMangledName(lowerer, symbol, HString()));
       root()->RegisterInterfaceLowerer(interface_type, interface_lowerer);
       break;
@@ -198,8 +198,8 @@ llvm::StructType* LoweringNode::GetOrCreateInstanceStruct(Symbol* symbol) {
 
       // found
       auto class_decl = decl_it->second;
-      auto ext_env = std::make_unique<Substitution>(lowerer->type_env());
-      class_lowerer = new ClassLowerer(lowerer, std::move(ext_env), class_decl);
+      auto ext_subst = std::make_unique<Substitution>(lowerer->subst());
+      class_lowerer = new ClassLowerer(lowerer, std::move(ext_subst), class_decl);
       class_lowerer->set_class_name(ChildMangledName(lowerer, symbol, HString()));
       root()->RegisterClassLowerer(class_type, class_lowerer);
       break;
@@ -230,8 +230,8 @@ llvm::Function* LoweringNode::GetOrBuildFunction(Symbol* symbol, const TypeVec& 
   auto sfunc_it = specialized_funcs_.find(key);
   if (sfunc_it == specialized_funcs_.end()) {
     auto func_decl = decl_it->second;
-    auto ext_env = ExtendTypeEnv(func_decl, type_args);
-    auto func_lowerer = new FunctionLowerer(this, std::move(ext_env), func_decl->func());
+    auto ext_subst = ExtendSubstitution(func_decl, type_args);
+    auto func_lowerer = new FunctionLowerer(this, std::move(ext_subst), func_decl->func());
     func_lowerer->set_func_name(ChildMangledName(this, symbol, key.second));
     auto [it, _] = specialized_funcs_.emplace(std::move(key), func_lowerer);
     sfunc_it = it;
@@ -243,8 +243,8 @@ llvm::Function* LoweringNode::GetOrBuildFunction(Symbol* symbol, const TypeVec& 
 }
 
 
-SubstitutionPtr LoweringNode::ExtendTypeEnv(FunctionDeclaration* func_decl, const TypeVec& type_args) {
-  auto ext_env = std::make_unique<Substitution>(type_env());
+SubstitutionPtr LoweringNode::ExtendSubstitution(FunctionDeclaration* func_decl, const TypeVec& type_args) {
+  auto ext_subst = std::make_unique<Substitution>(subst());
 
   auto decl_type = func_decl->symbol()->type();
   if (decl_type->kind() == Type::Kind::kScheme) {
@@ -252,14 +252,14 @@ SubstitutionPtr LoweringNode::ExtendTypeEnv(FunctionDeclaration* func_decl, cons
     xylo_contract(type_args.size() == type_scheme->vars().size());
 
     for (size_t i = 0; i < type_scheme->vars().size(); ++i) {
-      ext_env->insert(type_scheme->vars()[i], type_args[i]);
+      ext_subst->insert(type_scheme->vars()[i], type_args[i]);
     }
 
   } else {
     xylo_contract(type_args.size() == 0);
   }
 
-  return ext_env;
+  return ext_subst;
 }
 
 

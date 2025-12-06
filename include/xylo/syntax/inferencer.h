@@ -97,7 +97,7 @@ class Inferencer : public DiagnosticReporter {
   void VisitBinaryExpression(BinaryExpression* expr, InferenceContext* ctx);
   void VisitConditionalExpression(ConditionalExpression* expr, InferenceContext* ctx);
   void VisitConstructExpression(ConstructExpression* expr, InferenceContext* ctx);
-  void VisitProjectionExpression(ProjectionExpression* expr, InferenceContext* ctx);
+  void VisitSelectExpression(SelectExpression* expr, InferenceContext* ctx);
   void VisitBlockExpression(BlockExpression* expr, InferenceContext* ctx);
 
   struct VariableContext {

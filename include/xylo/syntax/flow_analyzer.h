@@ -48,7 +48,7 @@ class FlowAnalyzer : public DiagnosticReporter {
   void VisitBinaryExpression(BinaryExpression* expr, FlowState* state);
   void VisitConditionalExpression(ConditionalExpression* expr, FlowState* state);
   void VisitConstructExpression(ConstructExpression* expr, FlowState* state);
-  void VisitProjectionExpression(ProjectionExpression* expr, FlowState* state);
+  void VisitSelectExpression(SelectExpression* expr, FlowState* state);
   void VisitBlockExpression(BlockExpression* expr, FlowState* state);
 
   void VisitExpressionInitializer(ExpressionInitializer* init, FlowState* state);

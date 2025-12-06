@@ -581,8 +581,8 @@ void Inferencer::VisitExpression(Expression* expr, InferenceContext* ctx) {
       VisitConstructExpression(expr->As<ConstructExpression>(), ctx);
       break;
 
-    case Expression::Kind::kProjection:
-      VisitProjectionExpression(expr->As<ProjectionExpression>(), ctx);
+    case Expression::Kind::kSelect:
+      VisitSelectExpression(expr->As<SelectExpression>(), ctx);
       break;
 
     case Expression::Kind::kBlock:
@@ -1098,7 +1098,7 @@ void Inferencer::VisitConstructExpression(ConstructExpression* expr, InferenceCo
 }
 
 
-void Inferencer::VisitProjectionExpression(ProjectionExpression* expr, InferenceContext* ctx) {
+void Inferencer::VisitSelectExpression(SelectExpression* expr, InferenceContext* ctx) {
   xylo_contract(expr->type() == nullptr);
 
   InferenceContext local_ctx(*ctx);
@@ -1343,13 +1343,13 @@ bool Inferencer::MarkLValue(Expression* expr) {
       }
     }
 
-    case Expression::Kind::kProjection: {
-      auto proj_expr = expr->As<ProjectionExpression>();
-      auto member_req = proj_expr->member_req();
+    case Expression::Kind::kSelect: {
+      auto select_expr = expr->As<SelectExpression>();
+      auto member_req = select_expr->member_req();
       if (member_req == nullptr) {
         return true;  // error case, skip
       } else if (member_req->SetMutable(true)) {
-        proj_expr->set_lvalue(true);
+        select_expr->set_lvalue(true);
         return true;
       } else {
         return false;

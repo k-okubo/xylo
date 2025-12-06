@@ -178,9 +178,9 @@ bool Compiler::CreateMainTypeArgs(Symbol* main_symbol, Vector<Type*>* out_type_a
     return false;
   }
 
-  Substitution empty_env;
+  Substitution empty_subst;
   for (auto* var : instanciated_vars) {
-    out_type_args->push_back(var->Zonk(&empty_env, false, &allocated));
+    out_type_args->push_back(var->Zonk(&empty_subst, false, &allocated));
   }
 
   return true;

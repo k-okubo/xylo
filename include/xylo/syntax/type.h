@@ -63,7 +63,7 @@ class TypeArena {
 };
 
 
-class Type : public TypeArena, public Downcastable {
+class Type : public Downcastable {
  public:
   enum class Kind {
     kError,
@@ -81,7 +81,8 @@ class Type : public TypeArena, public Downcastable {
 
  protected:
   explicit Type(Kind kind) :
-      kind_(kind) {}
+      kind_(kind),
+      arena_() {}
 
  public:
   virtual ~Type() = default;
@@ -90,6 +91,7 @@ class Type : public TypeArena, public Downcastable {
   Type& operator=(const Type&) = delete;
 
   Kind kind() const { return kind_; }
+  TypeArena* arena() { return &arena_; }
 
   virtual bool equals(const Type* other) const = 0;
   virtual bool is_atomic_type() const { return false; }
@@ -137,6 +139,7 @@ class Type : public TypeArena, public Downcastable {
 
  private:
   Kind kind_;
+  TypeArena arena_;
 };
 
 

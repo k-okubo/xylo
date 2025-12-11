@@ -757,7 +757,7 @@ bool MemberConstraint::Resolve(NominalType* nominal, TypePairSet* visited) {
 
   this->set_resolved(member);
   this->set_instantiated_vars(std::move(instantiated_vars));
-  this->merge(&arena);
+  this->arena()->merge(&arena);
 
   auto owner = member->owner();
   if (!nominal->IsSubtypeOf(owner)) {
@@ -766,7 +766,7 @@ bool MemberConstraint::Resolve(NominalType* nominal, TypePairSet* visited) {
   }
 
   if (member->kind() == MemberInfo::Kind::kMethod) {
-    set_origin_owner(FindOriginOwner(owner, this->name(), MemberInfo::Kind::kMethod, this));
+    set_origin_owner(FindOriginOwner(owner, this->name(), MemberInfo::Kind::kMethod, this->arena()));
   } else {
     set_origin_owner(owner);
   }
@@ -1063,7 +1063,7 @@ bool VariableBase::ConstrainUpperBoundForAtom(Type* new_ub, TypePairSet* visited
       auto ub_member_tyvar = new TypeVariable(owner_tyvar->scope());
       ub_member_tyvar->ConstrainSameAs(ub_memcon->type());
       ub_memcon->set_type(ub_member_tyvar);
-      owner_->adopt_type(TypePtr(ub_member_tyvar));
+      owner_->arena()->adopt_type(TypePtr(ub_member_tyvar));
     }
   }
 
@@ -1149,7 +1149,7 @@ bool VariableBase::ConstrainLowerBoundForAtom(Type* new_lb, TypePairSet* visited
       if (!ConstrainUpperBound(ancestors.get(), visited)) {
         return false;
       }
-      owner_->adopt_type(std::move(ancestors));
+      owner_->arena()->adopt_type(std::move(ancestors));
       break;
   }
 
@@ -1165,18 +1165,18 @@ void VariableBase::Functionize(const FunctionType* base_shape, bool lower_based)
 
   auto params_size = base_shape->params_type()->elements().size();
   auto params = new TupleType();
-  owner_->adopt_type(TypePtr(params));
+  owner_->arena()->adopt_type(TypePtr(params));
 
   for (size_t i = 0; i < params_size; ++i) {
     auto var = func_rettype_();  // TODO: use TypeMetavar
-    owner_->adopt_type(TypePtr(var));
+    owner_->arena()->adopt_type(TypePtr(var));
     params->add_element(var);
   }
 
   auto return_type = func_rettype_();
   func_shape_ = new FunctionType(base_shape->is_closure(), params, return_type);
-  owner_->adopt_type(TypePtr(return_type));
-  owner_->adopt_type(TypePtr(func_shape_));
+  owner_->arena()->adopt_type(TypePtr(return_type));
+  owner_->arena()->adopt_type(TypePtr(func_shape_));
 
   lower_based_closure_ = lower_based;
 }
@@ -1778,27 +1778,27 @@ Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const
       auto sbst = new_nominal->substitution();
 
       for (auto super : nominal->supers()) {
-        auto sbsted_super = sbst->Apply(super, new_nominal);
+        auto sbsted_super = sbst->Apply(super, arena);
         new_nominal->AddSuper(sbsted_super->As<NominalType>());
       }
 
       for (auto embedded : nominal->embeddeds()) {
-        auto sbsted_type = sbst->Apply(embedded->type(), new_nominal);
+        auto sbsted_type = sbst->Apply(embedded->type(), arena);
         new_nominal->AddEmbedded(embedded->name(), sbsted_type->As<NominalType>());
       }
 
       for (auto field : nominal->fields()) {
-        auto sbsted_type = sbst->Apply(field->type(), new_nominal);
+        auto sbsted_type = sbst->Apply(field->type(), arena);
         new_nominal->AddField(field->name(), sbsted_type);
       }
 
       for (auto method : nominal->methods()) {
-        auto sbsted_type = method->type() ? sbst->Apply(method->type(), new_nominal, true) : nullptr;
+        auto sbsted_type = method->type() ? sbst->Apply(method->type(), arena, true) : nullptr;
         auto member_info = new_nominal->AddMethod(method->name(), sbsted_type);
         if (sbsted_type == nullptr) {
           member_info->set_type_resolver([=]() {
             method->resolve_type();
-            member_info->set_type(sbst->Apply(method->type(), new_nominal, true));
+            member_info->set_type(sbst->Apply(method->type(), arena, true));
           });
         }
       }

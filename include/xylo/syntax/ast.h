@@ -464,7 +464,7 @@ class LetStatement : public Statement {
 };
 
 
-class VarStatement : public Statement, public TypeArena {
+class VarStatement : public Statement {
  public:
   static auto Create(SymbolPtr&& symbol, ExpressionPtr&& expr) {
     auto p = new VarStatement(std::move(symbol), std::move(expr));
@@ -475,15 +475,19 @@ class VarStatement : public Statement, public TypeArena {
   explicit VarStatement(SymbolPtr&& symbol, ExpressionPtr&& expr) :
       Statement(Kind::kVar),
       symbol_(std::move(symbol)),
-      expr_(std::move(expr)) {}
+      expr_(std::move(expr)),
+      arena_() {}
 
  public:
   Symbol* symbol() const { return symbol_.get(); }
   Expression* expr() const { return expr_.get(); }
 
+  TypeArena* arena() { return &arena_; }
+
  private:
   SymbolPtr symbol_;
   ExpressionPtr expr_;
+  TypeArena arena_;
 };
 
 
@@ -507,7 +511,7 @@ class ReturnStatement : public Statement {
 };
 
 
-class Expression : public TypeArena, public Downcastable {
+class Expression : public Downcastable {
  public:
   enum class Kind {
     kNull,
@@ -529,7 +533,8 @@ class Expression : public TypeArena, public Downcastable {
   explicit Expression(Kind kind) :
       kind_(kind),
       type_(nullptr),
-      position_() {}
+      position_(),
+      arena_() {}
 
  public:
   virtual ~Expression() = default;
@@ -545,10 +550,13 @@ class Expression : public TypeArena, public Downcastable {
   const SourceRange& position() const { return position_; }
   void set_position(const SourceRange& position) { position_ = position; }
 
+  TypeArena* arena() { return &arena_; }
+
  private:
   Kind kind_;
   Type* type_;
   SourceRange position_;
+  TypeArena arena_;
 };
 
 

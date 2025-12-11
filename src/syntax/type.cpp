@@ -2407,18 +2407,18 @@ std::string TypePrinter::Print(const TypeScheme* type, bool paren, Status* statu
     return Print(type->body(), paren, status);
   }
 
-  std::string str = "Forall (";
+  std::string str = "forall ";
 
   bool first = true;
   for (auto var : type->vars()) {
     if (!first) {
-      str += ", ";
+      str += " ";
     }
     first = false;
     str += Print(var, false, status);
   }
 
-  str += "). ";
+  str += ". ";
   str += Print(type->body(), false, status);
 
   return str;

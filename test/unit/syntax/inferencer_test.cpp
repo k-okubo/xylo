@@ -624,7 +624,7 @@ TEST(InferencerTest, AddFunction_Polymorphic) {
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
-            "Forall (A, B, C). (A, B) -> C where "
+            "forall A B C. (A, B) -> C where "
             "<Bottom> <: A <: (Numeric & C), <Bottom> <: B <: (Numeric & C), (A | B) <: C <: <Top>");
 
   TypePrinter stp;
@@ -699,7 +699,7 @@ TEST(InferencerTest, IdentityFunction_NominalType) {
   EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), cat_type);
 
   TypePrinter vtp({.verbose = true});
-  EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "Forall (A). A -> A");
+  EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "forall A. A -> A");
 
   TypePrinter stp;
   EXPECT_EQ(stp(file_ast->declarations()[1]->symbol()->type()), "A -> A");
@@ -737,9 +737,9 @@ TEST(InferencerTest, IdentityFunction_FunctionType) {
   EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), context.int_type());
 
   TypePrinter vtp({.verbose = true});
-  EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "Forall (A). A -> A");
+  EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "forall A. A -> A");
   EXPECT_EQ(vtp(file_ast->declarations()[2]->symbol()->type()),
-            "Forall (A, B, C). (A, B) -> C where "
+            "forall A B C. (A, B) -> C where "
             "<Bottom> <: A <: (Numeric & C), <Bottom> <: B <: (Numeric & C), (A | B) <: C <: <Top>");
 
   TypePrinter stp;
@@ -781,10 +781,10 @@ TEST(InferencerTest, ApplyFunction) {
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
-            "Forall (A, B, C, D). (A, B) -> C where "
+            "forall A B C D. (A, B) -> C where "
             "<Bottom> <: A = (D => C) <: <Top>, <Bottom> <: B <: D, B <: D <: <Top>");
   EXPECT_EQ(vtp(file_ast->declarations()[2]->symbol()->type()),
-            "Forall (A, B). A -> B where <Bottom> <: A <: (Numeric & B), (A | int) <: B <: Comparable");
+            "forall A B. A -> B where <Bottom> <: A <: (Numeric & B), (A | int) <: B <: Comparable");
 
   TypePrinter stp;
   EXPECT_EQ(stp(file_ast->declarations()[1]->symbol()->type()), "(A -> B, C) -> B where C <: A");
@@ -837,7 +837,7 @@ TEST(InferencerTest, ApplyFunction_WithTypeConstraints1) {
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
-            "Forall (A, B, C, D, E). (A, B) -> C where "
+            "forall A B C D E. (A, B) -> C where "
             "<Bottom> <: A = (D => E) <: <Top>, int <: B <: (int & D), (Dog | E) <: C <: Animal, "
             "(int | B) <: D <: Comparable, <Bottom> <: E <: (Animal & C)");
 
@@ -902,10 +902,10 @@ TEST(InferencerTest, FunctionParameterMultiUse) {
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
-            "Forall (A, B, C, D). (A, B) -> C where "
+            "forall A B C D. (A, B) -> C where "
             "<Bottom> <: A = (D => C) <: <Top>, <Bottom> <: B <: D, <Bottom> <: C <: Numeric, B <: D <: <Top>");
   EXPECT_EQ(vtp(file_ast->declarations()[2]->symbol()->type()),
-            "Forall (A, B). A -> B where <Bottom> <: A <: (Numeric & B), (A | int) <: B <: Comparable");
+            "forall A B. A -> B where <Bottom> <: A <: (Numeric & B), (A | int) <: B <: Comparable");
 
   TypePrinter stp;
   EXPECT_EQ(stp(file_ast->declarations()[1]->symbol()->type()), "(A -> B, C) -> B where C <: A, B <: Numeric");
@@ -951,12 +951,11 @@ TEST(InferencerTest, CurriedFunction_Simple) {
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
-            "Forall (A, B, C, D, E, F). A -> B where "
+            "forall A B C D E F. A -> B where "
             "<Bottom> <: A = (C => D) <: <Top>, <Bottom> <: B = (E => F) <: <Top>, "
             "E <: C <: <Top>, <Bottom> <: D <: F, <Bottom> <: E <: C, D <: F <: <Top>");
   EXPECT_EQ(vtp(file_ast->declarations()[2]->symbol()->type()),
-            "Forall (A, B). A -> B where <Bottom> <: A <: (Numeric & B), (A | int) <: B <: Comparable");
-
+            "forall A B. A -> B where <Bottom> <: A <: (Numeric & B), (A | int) <: B <: Comparable");
   TypePrinter stp;
   EXPECT_EQ(stp(file_ast->declarations()[1]->symbol()->type()), "(A -> B) -> C -> D where C <: A, B <: D");
   EXPECT_EQ(stp(file_ast->declarations()[2]->symbol()->type()),
@@ -1034,7 +1033,7 @@ TEST(InferencerTest, NestedFunction_ReturnsOuterVar) {
   EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), dog_type);
 
   TypePrinter vtp({.verbose = true});
-  EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "Forall (A). A -> A");
+  EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "forall A. A -> A");
 
   TypePrinter stp;
   EXPECT_EQ(stp(file_ast->declarations()[1]->symbol()->type()), "A -> A");
@@ -1092,7 +1091,7 @@ TEST(InferencerTest, NestedFunction_InnerFuncPolymorphic) {
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(
       vtp(file_ast->declarations()[1]->symbol()->type()),
-      "Forall (A, B, C, D). (A, B) -> C where <Bottom> <: A = (D => C) <: <Top>, <Bottom> <: B <: D, B <: D <: <Top>");
+      "forall A B C D. (A, B) -> C where <Bottom> <: A = (D => C) <: <Top>, <Bottom> <: B <: D, B <: D <: <Top>");
 
   TypePrinter stp;
   EXPECT_EQ(stp(file_ast->declarations()[1]->symbol()->type()), "(A -> B, C) -> B where C <: A");
@@ -1293,7 +1292,7 @@ TEST(InferencerTest, TypeInferenceByNestedFunc) {
   ASSERT_FALSE(inferencer.has_diagnostics());
 
   TypePrinter vtp({.verbose = true});
-  EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "Forall (A). A -> unit where int <: A <: int");
+  EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "forall A. A -> unit where int <: A <: int");
 
   TypePrinter stp;
   EXPECT_EQ(stp(file_ast->declarations()[1]->symbol()->type()), "int -> unit");
@@ -1373,7 +1372,7 @@ TEST(InferencerTest, MergeType_IncompatibleButUnused) {
   ASSERT_FALSE(inferencer.has_diagnostics());
 
   TypePrinter vtp({.verbose = true});
-  EXPECT_EQ(vtp(file_ast->declarations()[3]->symbol()->type()), "Forall (A, B). (A, B) -> unit");
+  EXPECT_EQ(vtp(file_ast->declarations()[3]->symbol()->type()), "forall A B. (A, B) -> unit");
 
   TypePrinter stp;
   EXPECT_EQ(stp(file_ast->declarations()[3]->symbol()->type()), "(A, B) -> unit");
@@ -1592,7 +1591,7 @@ TEST(InferencerTest, GetterFunction) {
   ASSERT_GE(file_ast->declarations().size(), 2);
 
   TypePrinter vtp({.verbose = true});
-  EXPECT_EQ(vtp(file_ast->declarations()[2]->symbol()->type()), "Forall (A, B). A -> B where <Bottom> <: A <: {a: B}");
+  EXPECT_EQ(vtp(file_ast->declarations()[2]->symbol()->type()), "forall A B. A -> B where <Bottom> <: A <: {a: B}");
 
   TypePrinter stp;
   EXPECT_EQ(stp(file_ast->declarations()[2]->symbol()->type()), "A -> B where A <: {a: B}");
@@ -2310,7 +2309,7 @@ TEST(InferencerTest, NestedClassInPolymorphicFunction2) {
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(get_method_type),
-            "[A := bool] [B := Dog] Forall (C, D). C => D where "
+            "[A := bool] [B := Dog] forall C D. C => D where "
             "<Bottom> <: A <: bool, <Bottom> <: C <: D, (B | C) <: D <: <Top>");
 
   TypePrinter stp;
@@ -2380,7 +2379,7 @@ TEST(InferencerTest, NestedClassInPolymorphicFunction3) {
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(
       vtp(get_method_type),
-      "[A := B', C := D'] [E := C] Forall (F, G). F => G where "
+      "[A := B', C := D'] [E := C] forall F G. F => G where "
       "<Bottom> <: A <: bool, bool <: B' <: bool, Dog <: D' <: Animal, <Bottom> <: F <: G, (E | F) <: G <: <Top>");
 
   TypePrinter stp;

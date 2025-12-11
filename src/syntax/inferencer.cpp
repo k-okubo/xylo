@@ -3,8 +3,6 @@
 
 #include <sstream>
 
-#include "xylo/syntax/substitution.h"
-
 namespace xylo {
 
 
@@ -38,6 +36,7 @@ void Inferencer::PreVisitInterfaceCreation(InterfaceDeclaration* decl) {
   xylo_contract(decl->symbol()->type() == nullptr);
 
   auto interface_type = new NominalType(NominalType::Category::kInterface, decl->symbol()->name());
+  interface_type->set_scope(decl->symbol()->scope());
   decl->symbol()->set_type(interface_type);
   context_->RegisterClass(decl->symbol(), TypePtr(interface_type));
 
@@ -52,6 +51,7 @@ void Inferencer::PreVisitClassCreation(ClassDeclaration* decl) {
   xylo_contract(decl->symbol()->type() == nullptr);
 
   auto class_type = new NominalType(NominalType::Category::kClass, decl->symbol()->name());
+  class_type->set_scope(decl->symbol()->scope());
   decl->symbol()->set_type(class_type);
   context_->RegisterClass(decl->symbol(), TypePtr(class_type));
 
@@ -131,18 +131,31 @@ void Inferencer::PreVisitClassDeclaration(ClassDeclaration* decl) {
   auto class_type = decl->symbol()->type()->As<NominalType>();
 
   RegisterSupertypes(class_type, decl->supers());
-  RegisterEmbeddings(class_type, decl->embeddings());
+  RegisterEmbeddeds(class_type, decl->embeddeds());
   RegisterFields(class_type, decl->fields());
+
+  // create inner decls first
+  for (auto& decl : decl->declarations()) {
+    switch (decl->kind()) {
+      case Declaration::Kind::kInterface:
+        PreVisitInterfaceCreation(decl->As<InterfaceDeclaration>());
+        break;
+
+      case Declaration::Kind::kClass:
+        PreVisitClassCreation(decl->As<ClassDeclaration>());
+        break;
+
+      default:
+        break;
+    }
+  }
 
   // previsit inner decls
   for (auto& inner_decl : decl->declarations()) {
     switch (inner_decl->kind()) {
       case Declaration::Kind::kClass:
-        xylo_unreachable();
-        break;
-
       case Declaration::Kind::kInterface:
-        xylo_unreachable();
+        PreVisitDeclaration(inner_decl.get());
         break;
 
       case Declaration::Kind::kFunction: {
@@ -195,23 +208,23 @@ void Inferencer::RegisterSupertypes(NominalType* nominal_type, const Vector<Supe
 }
 
 
-void Inferencer::RegisterEmbeddings(NominalType* nominal_type, const Vector<EmbeddingClassPtr>& embeddings) {
-  for (auto& embedding : embeddings) {
-    auto embed_symbol = embedding->symbol();
-    xylo_contract(embed_symbol->type() != nullptr);
+void Inferencer::RegisterEmbeddeds(NominalType* nominal_type, const Vector<EmbeddedClassPtr>& embeddeds) {
+  for (auto& embedded : embeddeds) {
+    auto embedded_symbol = embedded->symbol();
+    xylo_contract(embedded_symbol->type() != nullptr);
 
-    auto& state = GetEntityState(embed_symbol);
+    auto& state = GetEntityState(embedded_symbol);
     if (!state.done) {
       if (state.in_progress) {
-        ReportError(embedding->position(), "cyclic embedding detected");
+        ReportError(embedded->position(), "cyclic embedding detected");
         continue;
       } else {
         state.resolve();
       }
     }
 
-    auto embed_nominal = embed_symbol->type()->As<NominalType>();
-    xylo_check(nominal_type->AddEmbedding(embedding->name(), embed_nominal));
+    auto embedded_nominal = embedded_symbol->type()->As<NominalType>();
+    xylo_check(nominal_type->AddEmbedded(embedded->name(), embedded_nominal));
   }
 }
 
@@ -368,19 +381,6 @@ void Inferencer::VisitDeclaration(Declaration* decl) {
 
 void Inferencer::VisitClassDeclaration(ClassDeclaration* decl) {
   for (auto& inner_decl : decl->declarations()) {
-    if (inner_decl->kind() == Declaration::Kind::kClass) {
-      PreVisitClassCreation(inner_decl->As<ClassDeclaration>());
-    }
-  }
-
-  for (auto& inner_decl : decl->declarations()) {
-    // methods is already previsited in PrevisitClassDeclaration
-    if (inner_decl->kind() == Declaration::Kind::kClass) {
-      PreVisitDeclaration(inner_decl.get());
-    }
-  }
-
-  for (auto& inner_decl : decl->declarations()) {
     VisitDeclaration(inner_decl.get());
   }
 }
@@ -417,14 +417,14 @@ void Inferencer::VisitFunctionDeclaration(FunctionDeclaration* decl) {
   VisitFunctionBody(decl->func());
 
   // close over metavariables
-  auto depth = decl->func()->scope()->depth();
+  auto scope = decl->func()->inner_scope();
   auto func_type = decl->func()->type();
-  func_type = func_type->CloseOverMetavars(depth, decl->func());
-  func_type->PruneInnerScopeVars(depth);
+  func_type = func_type->CloseOverMetavars(scope, decl->func());
+  func_type->PruneInnerScopeVars(scope);
   decl->func()->set_type(func_type);
 
   // generalize function type and re-set it to symbol
-  auto generalized_type = func_type->Generalize(depth, decl->func());
+  auto generalized_type = func_type->Generalize(scope, decl->func());
   decl->symbol()->set_type(generalized_type);
 
   {
@@ -442,8 +442,17 @@ void Inferencer::VisitFunctionDeclaration(FunctionDeclaration* decl) {
 
 void Inferencer::VisitBlock(Block* block, InferenceContext* ctx) {
   for (auto& decl : block->declarations()) {
-    if (decl->kind() == Declaration::Kind::kClass) {
-      PreVisitClassCreation(decl->As<ClassDeclaration>());
+    switch (decl->kind()) {
+      case Declaration::Kind::kInterface:
+        PreVisitInterfaceCreation(decl->As<InterfaceDeclaration>());
+        break;
+
+      case Declaration::Kind::kClass:
+        PreVisitClassCreation(decl->As<ClassDeclaration>());
+        break;
+
+      default:
+        break;
     }
   }
 
@@ -692,7 +701,7 @@ void Inferencer::VisitFunctionPrototype(FunctionExpression* expr, bool is_lambda
       if (is_lambda) {
         var = new TypeMetavar();
       } else {
-        var = new TypeVariable(expr->scope()->depth());
+        var = new TypeVariable(expr->inner_scope());
       }
       expr->adopt_type(TypePtr(var));
       symbol->set_type(var);
@@ -1207,6 +1216,9 @@ void Inferencer::VisitObjectInitializer(ObjectInitializer* init, VariableContext
   Set<Identifier*> remain_fields;
   for (auto& field : object_type->fields()) {
     remain_fields.emplace(field->name());
+  }
+  for (auto& embedded : object_type->embeddeds()) {
+    remain_fields.emplace(embedded->name());
   }
 
   // initializers

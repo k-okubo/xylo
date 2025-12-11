@@ -59,7 +59,7 @@ class Inferencer : public DiagnosticReporter {
   void PreVisitFunctionDeclaration(FunctionDeclaration* decl);
 
   void RegisterSupertypes(NominalType* nominal_type, const Vector<SuperClassPtr>& super_classes);
-  void RegisterEmbeddings(NominalType* nominal_type, const Vector<EmbeddingClassPtr>& embeddings);
+  void RegisterEmbeddeds(NominalType* nominal_type, const Vector<EmbeddedClassPtr>& embeddeds);
   void RegisterFields(NominalType* nominal_type, const Vector<ClassFieldPtr>& fields);
   void RegisterMethod(NominalType* nominal_type, FunctionDeclaration* method);
   void RegisterMethodAbstract(MemberInfo* member_info, FunctionDeclaration* method);

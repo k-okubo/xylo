@@ -434,6 +434,209 @@ TEST(ClassTest, MethodConstraintInNestedFunc) {
 }
 
 
+TEST(ClassTest, ClassInFunction) {
+  auto source = R"(
+    def main() {
+      let foo = new Foo{ value: 42 }
+      return foo.get_value()
+
+      class Foo {
+        value: int
+        def get_value() => value
+      }
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
+TEST(ClassTest, ClassInFunction_Escape) {
+  auto source = R"(
+    def main() {
+      return create_foo(42).get_value()
+    }
+
+    def create_foo(v: int) {
+      return new Foo{ value: v }
+
+      class Foo {
+        value: int
+        def get_value() => value
+      }
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
+TEST(ClassTest, ClassInFunction_DeepEscape) {
+  auto source = R"(
+    def main() {
+      return create_foo(42).get_value()
+    }
+
+    def create_foo(v: int) {
+      return inner_create(10)
+
+      def inner_create(a) {
+        return new Foo{ value: v }
+
+        class Foo {
+          value: int
+          def get_value() => value + a
+        }
+      }
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 52);
+}
+
+
+TEST(ClassTest, ClassInFunction_Polymorphic1) {
+  auto source = R"(
+    def main() {
+      let foo1 = create_foo(new Bar{})
+      let foo2 = create_foo(new Baz{})
+      let check = foo1.get_object().get() == 1 && foo2.get_object().get() == 2
+      return check ? 1 : 0
+    }
+
+    def create_foo(obj) {
+      return new Foo{}
+
+      class Foo {
+        def get_object() => obj
+      }
+    }
+
+    class Bar { def get() => 1 }
+    class Baz { def get() => 2 }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(ClassTest, ClassInFunction_Polymorphic2) {
+  auto source = R"(
+    def main() {
+      let value1 = bridge(new Bar{})
+      let value2 = bridge(new Baz{})
+      let check = value1 == 1 && value2 == 2
+      return check ? 1 : 0
+    }
+
+    def bridge(v) {
+      return create_foo(v).get_object().get()
+    }
+
+    def create_foo(obj) {
+      return new Foo{}
+
+      class Foo {
+        def get_object() => obj
+      }
+    }
+
+    class Bar { def get() => 1 }
+    class Baz { def get() => 2 }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(ClassTest, ClassInFunction_ParamSlide) {
+  auto source = R"(
+    def main() {
+      let foo = outer(42)
+      return foo.get_value()
+    }
+
+    def outer(v) {
+      return inner(v)
+
+      def inner(v) {
+        return new Foo{}
+
+        class Foo {
+          def get_value() => v
+        }
+      }
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
+TEST(ClassTest, ClassInFunction_WithPolymorphicMethod) {
+  auto source = R"(
+    def main() {
+      let foo = outer(new Bar{})
+      let obj1 = foo.get_object(true, new Bar{})
+      let obj2 = foo.get_object(true, new Baz{})
+      let check = obj1.get_value() == 1 && obj2.get_value() == 4 && obj1.bar() == true
+      return check ? 1 : 0
+    }
+
+    def outer(default_obj) {
+      return inner()
+
+      def inner() {
+        return new Foo{}
+
+        class Foo {
+          def get_object(cond, obj) => cond ? obj : default_obj
+        }
+      }
+    }
+
+    interface ValueGetter {
+      def get_value(): int
+    }
+    class Bar : ValueGetter { def get_value(): int => 1; def bar() => true }
+    class Baz : ValueGetter { def get_value(): int => 4 }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(ClassTest, CLassInClass) {
+  auto source = R"(
+    class Outer {
+      value: int
+
+      def create_inner() => new Inner{}
+
+      class Inner {
+        def get_value() => value
+      }
+    }
+
+    def main() {
+      let outer = new Outer{ value: 42 }
+      let inner = outer.create_inner()
+      return inner.get_value()
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
 TEST(ClassTest, Embedding_PromotedFieldRead) {
   auto source = R"(
     class Bar {
@@ -624,6 +827,65 @@ TEST(ClassTest, Embedding_Priority) {
 
   auto result = CompileAndRun(source);
   EXPECT_EQ(result, 10);
+}
+
+
+TEST(ClassTest, Embedding_DifferentScope) {
+  auto source = R"(
+    def main() {
+      let foo = outer(42)
+      return foo.get_value()
+    }
+
+    def outer(v) {
+      return inner(v)
+
+      def inner(v) {
+        return new Foo{ Bar: { value: v } }
+
+        class Foo {
+          embed Bar
+        }
+      }
+
+      class Bar {
+        value: int
+        def get_value() => value
+      }
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
+TEST(ClassTest, Embedding_ClosureClass) {
+  auto source = R"(
+    def main() {
+      let foo = outer(42)
+      return foo.get_value()
+    }
+
+    def outer(v) {
+      return inner(v)
+
+      def inner(v) {
+        return new Foo{ Bar: {} }
+
+        class Foo {
+          embed Bar
+        }
+      }
+
+      class Bar {
+        def get_value() => v
+      }
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
 }
 
 

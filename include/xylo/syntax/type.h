@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "xylo/syntax/identifier.h"
+#include "xylo/syntax/scope.h"
 #include "xylo/util/downcastable.h"
 #include "xylo/util/map.h"
 #include "xylo/util/pair_hash.h"
@@ -25,6 +26,7 @@ class IntersectionType;
 class UnionType;
 class TypeMetavar;
 class TypeScheme;
+class Substitution;
 
 class NominalSlot;
 class MemberInfo;
@@ -35,12 +37,11 @@ using TypePtrVec = Vector<TypePtr>;
 using FunctionTypePtr = std::unique_ptr<FunctionType>;
 using IntersectionTypePtr = std::unique_ptr<IntersectionType>;
 using UnionTypePtr = std::unique_ptr<UnionType>;
+using SubstitutionPtr = std::unique_ptr<Substitution>;
 
 using MemberInfoPtr = std::unique_ptr<MemberInfo>;
 using SuperInfoPtr = std::unique_ptr<SuperInfo>;
 using TypePairSet = Set<std::pair<const Type*, const Type*>, PairHash>;
-
-class Substitution;
 
 
 class TypeArena {
@@ -75,6 +76,7 @@ class Type : public TypeArena, public Downcastable {
     kTyvar,
     kMetavar,
     kScheme,
+    kApplication,
   };
 
  protected:
@@ -120,10 +122,15 @@ class Type : public TypeArena, public Downcastable {
   // mark other <: this <: other, this <: other <: this
   bool ConstrainSameAs(Type* other);
 
-  virtual Type* CloseOverMetavars(int depth, TypeArena* arena) = 0;
-  void PruneInnerScopeVars(int depth);
-  Type* Generalize(int depth, TypeArena* arena);
-  virtual Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_instantiated_vars) const;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena) {
+    Map<TypeMetavar*, Type*> map;
+    return CloseOverMetavars(scope, arena, &map);
+  }
+  virtual Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) = 0;
+
+  void PruneInnerScopeVars(Scope* scope);
+  Type* Generalize(Scope* scope, TypeArena* arena);
+  virtual Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* subst = nullptr) const;
 
   virtual Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) = 0;
   bool IsGroundType() const;
@@ -146,7 +153,7 @@ class ErrorType : public Type {
 
  public:
   bool equals(const Type* other) const override;
-  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 };
 
@@ -164,9 +171,12 @@ class NominalType : public Type {
       Type(Kind::kNominal),
       category_(category),
       name_(name),
+      scope_(nullptr),
+      origin_(nullptr),
+      substitution_(nullptr),
       fields_(),
       methods_(),
-      embeddings_(),
+      embeddeds_(),
       supers_(),
       member_map_(),
       super_infos_() {}
@@ -174,9 +184,18 @@ class NominalType : public Type {
   Category category() const { return category_; }
   Identifier* name() const { return name_; }
 
+  Scope* scope() const { return scope_; }
+  void set_scope(Scope* scope) { scope_ = scope; }
+
+  NominalType* origin() const { return origin_; }
+  void set_origin(NominalType* origin) { origin_ = origin; }
+
+  Substitution* substitution() const { return substitution_.get(); }
+  void set_substitution(SubstitutionPtr&& subst) { substitution_ = std::move(subst); }
+
   const Vector<MemberInfo*>& fields() const { return fields_; }
   const Vector<MemberInfo*>& methods() const { return methods_; }
-  const Vector<MemberInfo*>& embeddings() const { return embeddings_; }
+  const Vector<MemberInfo*>& embeddeds() const { return embeddeds_; }
   const Vector<NominalType*>& supers() const { return supers_; }
 
   bool equals(const Type* other) const override;
@@ -192,18 +211,23 @@ class NominalType : public Type {
 
   MemberInfo* AddField(Identifier* field_name, Type* field_type);
   MemberInfo* AddMethod(Identifier* method_name, Type* method_type);
-  MemberInfo* AddEmbedding(Identifier* field_name, NominalType* clazz);
+  MemberInfo* AddEmbedded(Identifier* field_name, NominalType* clazz);
   bool AddSuper(NominalType* clazz);
 
-  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
   Category category_;
   Identifier* name_;
+  Scope* scope_;
+
+  NominalType* origin_;
+  SubstitutionPtr substitution_;
+
   Vector<MemberInfo*> fields_;
   Vector<MemberInfo*> methods_;
-  Vector<MemberInfo*> embeddings_;
+  Vector<MemberInfo*> embeddeds_;
   Vector<NominalType*> supers_;
 
   Map<Identifier*, MemberInfoPtr> member_map_;
@@ -324,7 +348,7 @@ class MemberConstraint : public Type {
     }
   }
 
-  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
@@ -355,7 +379,7 @@ class FunctionType : public Type {
   bool equals(const Type* other) const override;
   bool is_function_type() const override { return true; }
 
-  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
@@ -381,7 +405,7 @@ class TupleType : public Type {
   bool empty() const { return elements_.empty(); }
   bool equals(const Type* other) const override;
 
-  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
@@ -413,7 +437,7 @@ class IntersectionType : public Type {
 
   void ShrinkToLower();
 
-  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
@@ -446,7 +470,7 @@ class UnionType : public Type {
 
   void ShrinkToUpper();
 
-  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
@@ -510,20 +534,20 @@ class VariableBase {
 
 class TypeVariable : public Type {
  protected:
-  static constexpr auto func_rettype(int depth) {
-    return [depth]() {
-      return new TypeVariable(depth);
+  static constexpr auto func_rettype(Scope* scope) {
+    return [scope]() {
+      return new TypeVariable(scope);
     };
   }
 
  public:
-  explicit TypeVariable(int depth) :
+  explicit TypeVariable(Scope* scope) :
       Type(Kind::kTyvar),
-      varbase_(this, func_rettype(depth)),
-      depth_(depth) {}
+      varbase_(this, func_rettype(scope)),
+      scope_(scope) {}
 
-  int depth() const { return depth_; }
-  void set_depth(int depth) { depth_ = depth; }
+  Scope* scope() const { return scope_; }
+  void set_scope(Scope* scope) { scope_ = scope; }
 
   auto upper_bound() const { return varbase_.upper_bound(); }
   auto lower_bound() const { return varbase_.lower_bound(); }
@@ -535,7 +559,7 @@ class TypeVariable : public Type {
   bool is_function_type() const override { return varbase_.func_shape() != nullptr; }
   bool is_var_type() const override { return true; }
 
-  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   void PruneInnerScopeVars();
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
@@ -555,7 +579,7 @@ class TypeVariable : public Type {
 
  private:
   VariableBase varbase_;
-  int depth_;
+  Scope* scope_;
 
   friend class Type;
 };
@@ -584,7 +608,7 @@ class TypeMetavar : public Type {
   bool is_function_type() const override { return varbase_.func_shape() != nullptr; }
   bool is_var_type() const override { return true; }
 
-  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  protected:
@@ -627,13 +651,92 @@ class TypeScheme : public Type {
 
   bool equals(const Type* other) const override;
 
-  Type* CloseOverMetavars(int depth, TypeArena* arena) override;
-  Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_instantiated_vars) const override;
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
+  Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* subst = nullptr) const override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
   Vector<TypeVariable*> vars_;
   Type* body_;
+};
+
+
+class TypeApplication : public Type {
+ public:
+  TypeApplication(Type* target, Substitution* substitution) :
+      Type(Kind::kApplication),
+      target_(target),
+      substitution_(substitution) {}
+
+  Type* target() const { return target_; }
+  Substitution* substitution() const { return substitution_; }
+
+  bool equals(const Type* other) const override;
+
+  Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
+  Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* subst = nullptr) const override;
+  Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
+
+ private:
+  Type* target_;
+  Substitution* substitution_;
+};
+
+
+class Substitution {
+ public:
+  explicit Substitution(const Substitution* parent = nullptr) :
+      parent_(parent),
+      entries_(),
+      args_(),
+      scope_(nullptr) {}
+
+  ~Substitution() = default;
+
+  Substitution(const Substitution&) = delete;
+  Substitution& operator=(const Substitution&) = delete;
+
+  auto parent() const { return parent_; }
+  void set_parent(const Substitution* parent) { parent_ = parent; }
+
+  const Map<const TypeVariable*, Type*>& entries() const { return entries_; }
+  const Vector<Type*>& args() const { return args_; }
+  Scope* scope() const { return scope_; }
+
+  bool Insert(const TypeVariable* var, Type* type) {
+    if (var == type) {
+      return false;
+    }
+    if (scope_ == nullptr) {
+      scope_ = var->scope();
+    }
+    if (scope_ == var->scope()) {
+      auto [_, success] = entries_.emplace(var, type);
+      args_.push_back(type);
+      return success;
+    } else {
+      return false;
+    }
+  }
+
+  Type* Apply(Type* type, TypeArena* arena, bool savable_this = false) const;
+
+  SubstitutionPtr clone() const {
+    xylo_contract(parent() == nullptr);
+    auto s = std::make_unique<Substitution>(nullptr);
+    s->entries_ = entries_.clone();
+    s->args_ = args_.clone();
+    s->scope_ = scope_;
+    return s;
+  }
+
+  void CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map);
+
+ private:
+  const Substitution* parent_;
+  Map<const TypeVariable*, Type*> entries_;
+  Vector<Type*> args_;
+  Scope* scope_;
 };
 
 
@@ -685,6 +788,8 @@ class TypePrinter {
   std::string Print(const TypeVariable* type, bool paren, Status* status) const;
   std::string Print(const TypeMetavar* type, bool paren, Status* status) const;
   std::string Print(const TypeScheme* type, bool paren, Status* status) const;
+  std::string Print(const TypeApplication* type, bool paren, Status* status) const;
+  std::string Print(const Substitution* subst, Status* status) const;
 
   std::string PrintConstraints(Status* status) const;
 

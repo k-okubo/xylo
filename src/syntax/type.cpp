@@ -3,7 +3,6 @@
 
 #include <functional>
 
-#include "xylo/syntax/substitution.h"
 #include "xylo/util/finally.h"
 
 namespace xylo {
@@ -56,10 +55,10 @@ bool NominalType::GetMemberPath(Identifier* member_name, Vector<NominalSlot*>* o
     }
   }
 
-  for (auto embedding : embeddings_) {
-    auto embed_type = embedding->type()->As<NominalType>();
-    if (embed_type->GetMemberPath(member_name, out_path)) {
-      out_path->push_back(embedding);  // reverse order
+  for (auto embedded : embeddeds_) {
+    auto embedded_type = embedded->type()->As<NominalType>();
+    if (embedded_type->GetMemberPath(member_name, out_path)) {
+      out_path->push_back(embedded);  // reverse order
       return true;
     }
   }
@@ -94,13 +93,13 @@ bool NominalType::GetSuperPath(NominalType* super, Vector<NominalSlot*>* out_pat
 
 
 void NominalType::FindEmbededMembers(Identifier* member_name, Vector<MemberInfo*>* out_members) const {
-  for (auto embedding : embeddings_) {
-    auto embed_type = embedding->type()->As<NominalType>();
-    auto member = embed_type->GetDeclaredMember(member_name);
+  for (auto embedded : embeddeds_) {
+    auto embedded_type = embedded->type()->As<NominalType>();
+    auto member = embedded_type->GetDeclaredMember(member_name);
     if (member != nullptr) {
       out_members->push_back(member);
     } else {
-      embed_type->FindEmbededMembers(member_name, out_members);
+      embedded_type->FindEmbededMembers(member_name, out_members);
     }
   }
 }
@@ -132,8 +131,8 @@ MemberInfo* NominalType::AddField(Identifier* field_name, Type* field_type) {
     return nullptr;
   }
 
-  // field and embedding share the same numbering system
-  int index = fields_.size() + embeddings_.size();
+  // field and embedded share the same numbering system
+  int index = fields_.size() + embeddeds_.size();
   auto field = new MemberInfo(this, MemberInfo::Kind::kField, index, field_name, field_type);
 
   fields_.push_back(field);
@@ -157,27 +156,34 @@ MemberInfo* NominalType::AddMethod(Identifier* method_name, Type* method_type) {
 }
 
 
-MemberInfo* NominalType::AddEmbedding(Identifier* field_name, NominalType* clazz) {
+MemberInfo* NominalType::AddEmbedded(Identifier* field_name, NominalType* clazz) {
+  // Due to member copy by substitution, embeddeds must be added before fields
+  if (!fields_.empty()) {
+    return nullptr;
+  }
+
   if (GetDeclaredMember(field_name) != nullptr) {
     return nullptr;
   }
 
-  // field and embedding share the same numbering system
-  int index = fields_.size() + embeddings_.size();
-  auto embedding = new MemberInfo(this, MemberInfo::Kind::kEmbedding, index, field_name, clazz);
+  // field and embedded share the same numbering system
+  int index = fields_.size() + embeddeds_.size();
+  auto embedded = new MemberInfo(this, MemberInfo::Kind::kEmbedding, index, field_name, clazz);
 
-  embeddings_.push_back(embedding);
-  member_map_.emplace(field_name, MemberInfoPtr(embedding));
-  return embedding;
+  embeddeds_.push_back(embedded);
+  member_map_.emplace(field_name, MemberInfoPtr(embedded));
+  return embedded;
 }
 
 
 bool NominalType::AddSuper(NominalType* clazz) {
   // Due to index numbering requirements, supers must be added before methods
-  xylo_contract(methods_.empty());
+  if (!methods_.empty()) {
+    return false;
+  }
 
   // method and super share the same numbering system
-  int index = supers_.size();
+  int index = methods_.size() + supers_.size();
   auto super_info = new SuperInfo(this, index, clazz);
 
   supers_.push_back(clazz);
@@ -302,6 +308,11 @@ bool TypeMetavar::equals(const Type* other) const {
 
 
 bool TypeScheme::equals(const Type* other) const {
+  return this == other;
+}
+
+
+bool TypeApplication::equals(const Type* other) const {
   return this == other;
 }
 
@@ -862,6 +873,9 @@ static bool OccursIn(const Type* haystack, const Type* needle, bool check_ul_bou
 
     case Type::Kind::kScheme:
       xylo_unreachable();
+
+    case Type::Kind::kApplication:
+      xylo_unreachable();
   }
 
   xylo_unreachable();
@@ -906,6 +920,7 @@ static void CollectTopAncestors(Type* type, UnionType* ancestors) {
     case Type::Kind::kTuple:
     case Type::Kind::kUnion:
     case Type::Kind::kScheme:
+    case Type::Kind::kApplication:
       xylo_unreachable();
   }
 }
@@ -1034,24 +1049,21 @@ bool VariableBase::ConstrainUpperBoundForFunc(Type* new_ub, TypePairSet* visited
 
 
 bool VariableBase::ConstrainUpperBoundForAtom(Type* new_ub, TypePairSet* visited) {
-  if (new_ub->kind() == Type::Kind::kMemberConstraint) {
+  if (owner_->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kMemberConstraint) {
+    auto owner_tyvar = owner_->As<TypeVariable>();
     auto ub_memcon = new_ub->As<MemberConstraint>();
 
-    if (owner_->kind() == Type::Kind::kTyvar) {
-      auto owner_tyvar = owner_->As<TypeVariable>();
-
-      if (ub_memcon->type()->kind() == Type::Kind::kTyvar) {
-        auto ub_member_tyvar = ub_memcon->type()->As<TypeVariable>();
-        if (ub_member_tyvar->depth() > owner_tyvar->depth()) {
-          ub_member_tyvar->set_depth(owner_tyvar->depth());
-        }
+    if (ub_memcon->type()->kind() == Type::Kind::kTyvar) {
+      auto ub_member_tyvar = ub_memcon->type()->As<TypeVariable>();
+      if (owner_tyvar->scope()->is_outer_than(ub_member_tyvar->scope())) {
+        ub_member_tyvar->set_scope(owner_tyvar->scope());
       }
-      if (ub_memcon->type()->kind() == Type::Kind::kMetavar) {
-        auto ub_member_tyvar = new TypeVariable(owner_tyvar->depth());
-        ub_member_tyvar->ConstrainSameAs(ub_memcon->type());
-        ub_memcon->set_type(ub_member_tyvar);
-        owner_->adopt_type(TypePtr(ub_member_tyvar));
-      }
+    }
+    if (ub_memcon->type()->kind() == Type::Kind::kMetavar) {
+      auto ub_member_tyvar = new TypeVariable(owner_tyvar->scope());
+      ub_member_tyvar->ConstrainSameAs(ub_memcon->type());
+      ub_memcon->set_type(ub_member_tyvar);
+      owner_->adopt_type(TypePtr(ub_member_tyvar));
     }
   }
 
@@ -1308,32 +1320,48 @@ void UnionType::ShrinkToUpper() {
 }
 
 
-Type* ErrorType::CloseOverMetavars(int depth, TypeArena* arena) {
+Type* ErrorType::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
   return this;
 }
 
 
-Type* NominalType::CloseOverMetavars(int depth, TypeArena* arena) {
+Type* NominalType::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
+  if (this->substitution() != nullptr) {
+    this->substitution()->CloseOverMetavars(scope, arena, map);
+
+    for (auto field : this->fields()) {
+      if (field->type() != nullptr) {
+        field->set_type(field->type()->CloseOverMetavars(scope, arena, map));
+      }
+    }
+
+    for (auto method : this->methods()) {
+      if (method->type() != nullptr) {
+        method->set_type(method->type()->CloseOverMetavars(scope, arena, map));
+      }
+    }
+  }
+
   return this;
 }
 
 
-Type* MemberConstraint::CloseOverMetavars(int depth, TypeArena* arena) {
+Type* MemberConstraint::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
   return this;
 }
 
 
-Type* FunctionType::CloseOverMetavars(int depth, TypeArena* arena) {
-  params_type()->CloseOverMetavars(depth, arena);
-  return_type_ = return_type()->CloseOverMetavars(depth, arena);
+Type* FunctionType::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
+  params_type()->CloseOverMetavars(scope, arena, map);
+  return_type_ = return_type()->CloseOverMetavars(scope, arena, map);
   return this;
 }
 
 
-Type* TupleType::CloseOverMetavars(int depth, TypeArena* arena) {
+Type* TupleType::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
   Vector<Type*> new_elements;
   for (auto elem : elements()) {
-    auto new_elem = elem->CloseOverMetavars(depth, arena);
+    auto new_elem = elem->CloseOverMetavars(scope, arena, map);
     new_elements.push_back(new_elem);
   }
 
@@ -1342,10 +1370,10 @@ Type* TupleType::CloseOverMetavars(int depth, TypeArena* arena) {
 }
 
 
-Type* IntersectionType::CloseOverMetavars(int depth, TypeArena* arena) {
+Type* IntersectionType::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
   Vector<Type*> new_elements;
   for (auto elem : elements()) {
-    auto new_elem = elem->CloseOverMetavars(depth, arena);
+    auto new_elem = elem->CloseOverMetavars(scope, arena, map);
     new_elements.push_back(new_elem);
   }
 
@@ -1354,10 +1382,10 @@ Type* IntersectionType::CloseOverMetavars(int depth, TypeArena* arena) {
 }
 
 
-Type* UnionType::CloseOverMetavars(int depth, TypeArena* arena) {
+Type* UnionType::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
   Vector<Type*> new_elements;
   for (auto elem : elements()) {
-    auto new_elem = elem->CloseOverMetavars(depth, arena);
+    auto new_elem = elem->CloseOverMetavars(scope, arena, map);
     new_elements.push_back(new_elem);
   }
 
@@ -1366,30 +1394,51 @@ Type* UnionType::CloseOverMetavars(int depth, TypeArena* arena) {
 }
 
 
-Type* TypeVariable::CloseOverMetavars(int depth, TypeArena* arena) {
+Type* TypeVariable::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
   return this;
 }
 
 
-Type* TypeMetavar::CloseOverMetavars(int depth, TypeArena* arena) {
+Type* TypeMetavar::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
+  auto it = map->find(this);
+  if (it != map->end()) {
+    return it->second;
+  }
+
   Substitution subst;
   auto outgoing = this->Zonk(&subst, true, arena);
-  if (outgoing->kind() == Type::Kind::kError) {
+  if (outgoing->kind() != Type::Kind::kError) {
+    outgoing = outgoing->CloseOverMetavars(scope, arena, map);
+  } else {
     // The metavar cannot be determined uniquely, so it should be made into a variable.
-    outgoing = new TypeVariable(depth);
+    outgoing = new TypeVariable(scope);
     this->ConstrainSameAs(outgoing);
     arena->adopt_type(TypePtr(outgoing));
   }
+
+  map->emplace(this, outgoing);
   return outgoing;
 }
 
 
-Type* TypeScheme::CloseOverMetavars(int depth, TypeArena* arena) {
+Type* TypeScheme::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
   return this;
 }
 
 
-void Type::PruneInnerScopeVars(int depth) {
+Type* TypeApplication::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
+  return this;
+}
+
+
+void Substitution::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) {
+  for (auto& [param, arg] : entries_) {
+    arg = arg->CloseOverMetavars(scope, arena, map);
+  }
+}
+
+
+void Type::PruneInnerScopeVars(Scope* scope) {
   switch (kind()) {
     case Type::Kind::kError:
       return;
@@ -1402,15 +1451,15 @@ void Type::PruneInnerScopeVars(int depth) {
 
     case Type::Kind::kFunction: {
       auto func = As<FunctionType>();
-      func->params_type()->PruneInnerScopeVars(depth);
-      func->return_type()->PruneInnerScopeVars(depth);
+      func->params_type()->PruneInnerScopeVars(scope);
+      func->return_type()->PruneInnerScopeVars(scope);
       return;
     }
 
     case Type::Kind::kTuple: {
       auto tuple = As<TupleType>();
       for (auto elem : tuple->elements()) {
-        elem->PruneInnerScopeVars(depth);
+        elem->PruneInnerScopeVars(scope);
       }
       return;
     }
@@ -1418,7 +1467,7 @@ void Type::PruneInnerScopeVars(int depth) {
     case Type::Kind::kIntersection: {
       auto inter = As<IntersectionType>();
       for (auto elem : inter->elements()) {
-        elem->PruneInnerScopeVars(depth);
+        elem->PruneInnerScopeVars(scope);
       }
       return;
     }
@@ -1426,14 +1475,14 @@ void Type::PruneInnerScopeVars(int depth) {
     case Type::Kind::kUnion: {
       auto uni = As<UnionType>();
       for (auto elem : uni->elements()) {
-        elem->PruneInnerScopeVars(depth);
+        elem->PruneInnerScopeVars(scope);
       }
       return;
     }
 
     case Type::Kind::kTyvar: {
       auto tyvar = As<TypeVariable>();
-      if (tyvar->depth() == depth) {
+      if (tyvar->scope() == scope) {
         tyvar->PruneInnerScopeVars();
       }
       return;
@@ -1443,6 +1492,9 @@ void Type::PruneInnerScopeVars(int depth) {
       return;
 
     case Type::Kind::kScheme:
+      return;
+
+    case Type::Kind::kApplication:
       return;
   }
 }
@@ -1455,9 +1507,10 @@ void TypeVariable::PruneInnerScopeVars() {
   for (auto ub : upper_bound()->elements()) {
     if (ub->kind() == Type::Kind::kTyvar) {
       auto ub_tyvar = ub->As<TypeVariable>();
-      if (ub_tyvar->depth() > depth()) {
+      if (ub_tyvar->scope()->is_inner_than(this->scope())) {
         continue;
       }
+      xylo_contract(ub_tyvar->scope()->is_outer_than_equal(this->scope()));
     }
     new_upper_bound->add_element(ub);
   }
@@ -1465,9 +1518,10 @@ void TypeVariable::PruneInnerScopeVars() {
   for (auto lb : lower_bound()->elements()) {
     if (lb->kind() == Type::Kind::kTyvar) {
       auto lb_tyvar = lb->As<TypeVariable>();
-      if (lb_tyvar->depth() > depth()) {
+      if (lb_tyvar->scope()->is_inner_than(this->scope())) {
         continue;
       }
+      xylo_contract(lb_tyvar->scope()->is_outer_than_equal(this->scope()));
     }
     new_lower_bound->add_element(lb);
   }
@@ -1477,31 +1531,51 @@ void TypeVariable::PruneInnerScopeVars() {
 }
 
 
-static void CollectFreeTyVars(int depth, Type* type, Set<TypeVariable*>* ftv_set, Vector<TypeVariable*>* ftv_vec) {
+struct TyvarCollection {
+  Set<TypeVariable*> set;
+  Vector<TypeVariable*> vec;
+
+  void insert(TypeVariable* tyvar) {
+    auto [_, first_time] = set.emplace(tyvar);
+    if (first_time) {
+      vec.push_back(tyvar);
+    }
+  }
+};
+
+
+static void CollectFreeTyvars(Scope* scope, Substitution* subst, TyvarCollection* out_ftv);
+
+static void CollectFreeTyvars(Scope* scope, Type* type, TyvarCollection* out_ftv) {
   switch (type->kind()) {
     case Type::Kind::kError:
       return;
 
-    case Type::Kind::kNominal:
+    case Type::Kind::kNominal: {
+      auto nominal = type->As<NominalType>();
+      if (nominal->substitution() != nullptr) {
+        CollectFreeTyvars(scope, nominal->substitution(), out_ftv);
+      }
       return;
+    }
 
     case Type::Kind::kMemberConstraint: {
       auto memcon = type->As<MemberConstraint>();
-      CollectFreeTyVars(depth, memcon->type(), ftv_set, ftv_vec);
+      CollectFreeTyvars(scope, memcon->type(), out_ftv);
       return;
     }
 
     case Type::Kind::kFunction: {
       auto func = type->As<FunctionType>();
-      CollectFreeTyVars(depth, func->params_type(), ftv_set, ftv_vec);
-      CollectFreeTyVars(depth, func->return_type(), ftv_set, ftv_vec);
+      CollectFreeTyvars(scope, func->params_type(), out_ftv);
+      CollectFreeTyvars(scope, func->return_type(), out_ftv);
       return;
     }
 
     case Type::Kind::kTuple: {
       auto tuple = type->As<TupleType>();
       for (auto elem : tuple->elements()) {
-        CollectFreeTyVars(depth, elem, ftv_set, ftv_vec);
+        CollectFreeTyvars(scope, elem, out_ftv);
       }
       return;
     }
@@ -1509,7 +1583,7 @@ static void CollectFreeTyVars(int depth, Type* type, Set<TypeVariable*>* ftv_set
     case Type::Kind::kIntersection: {
       auto inter = type->As<IntersectionType>();
       for (auto elem : inter->elements()) {
-        CollectFreeTyVars(depth, elem, ftv_set, ftv_vec);
+        CollectFreeTyvars(scope, elem, out_ftv);
       }
       return;
     }
@@ -1517,76 +1591,107 @@ static void CollectFreeTyVars(int depth, Type* type, Set<TypeVariable*>* ftv_set
     case Type::Kind::kUnion: {
       auto uni = type->As<UnionType>();
       for (auto elem : uni->elements()) {
-        CollectFreeTyVars(depth, elem, ftv_set, ftv_vec);
+        CollectFreeTyvars(scope, elem, out_ftv);
       }
       return;
     }
 
     case Type::Kind::kTyvar: {
       auto tyvar = type->As<TypeVariable>();
-      if (tyvar->depth() < depth) {
-        return;
-      }
-
-      if (ftv_set->emplace(tyvar).second) {
-        ftv_vec->push_back(tyvar);
+      if (tyvar->scope() == scope) {
+        out_ftv->insert(tyvar);
+      } else {
+        xylo_contract(tyvar->scope()->is_outer_than(scope));
       }
 
       return;
     }
 
     case Type::Kind::kMetavar:
-      return;
-
     case Type::Kind::kScheme:
-      return;
+    case Type::Kind::kApplication:
+      xylo_unreachable();
   }
 }
 
 
-Type* Type::Generalize(int depth, TypeArena* arena) {
-  // collect tyvars at the specified depth
-  Set<TypeVariable*> ftv_set;
-  Vector<TypeVariable*> ftv_vec;
-  CollectFreeTyVars(depth, this, &ftv_set, &ftv_vec);
+static void CollectFreeTyvars(Scope* scope, Substitution* subst, TyvarCollection* out_ftv) {
+  for (auto& [param, arg] : subst->entries()) {
+    CollectFreeTyvars(scope, arg, out_ftv);
+  }
+}
+
+
+Type* Type::Generalize(Scope* scope, TypeArena* arena) {
+  // collect tyvars at the specified scope
+  TyvarCollection ftv;
+  CollectFreeTyvars(scope, this, &ftv);
 
   // internal representation also
-  for (size_t i = 0; i < ftv_vec.size(); ++i) {
-    auto var = ftv_vec[i];
+  for (size_t i = 0; i < ftv.vec.size(); ++i) {
+    auto var = ftv.vec[i];
 
     for (auto ub : var->upper_bound()->elements()) {
-      CollectFreeTyVars(depth, ub, &ftv_set, &ftv_vec);
+      CollectFreeTyvars(scope, ub, &ftv);
     }
     for (auto lb : var->lower_bound()->elements()) {
-      CollectFreeTyVars(depth, lb, &ftv_set, &ftv_vec);
+      CollectFreeTyvars(scope, lb, &ftv);
     }
     if (var->func_shape() != nullptr) {
-      CollectFreeTyVars(depth, var->func_shape(), &ftv_set, &ftv_vec);
+      CollectFreeTyvars(scope, var->func_shape(), &ftv);
     }
   }
 
-  if (ftv_vec.size() == 0) {
+  if (ftv.vec.size() == 0) {
     return this;
   } else {
-    auto scheme = new TypeScheme(std::move(ftv_vec), this);
+    auto scheme = new TypeScheme(std::move(ftv.vec), this);
     arena->adopt_type(TypePtr(scheme));
     return scheme;
   }
 }
 
 
-Type* Type::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_instantiated_vars) const {
+static void NormalizeUpperBound(IntersectionType* upper_bound, Type* ub) {
+  upper_bound->add_element(ub);
+
+  if (ub->kind() == Type::Kind::kMetavar) {
+    auto ub_metavar = ub->As<TypeMetavar>();
+    for (auto ub_elem : ub_metavar->upper_bound()->elements()) {
+      if (ub_elem->kind() != Type::Kind::kMetavar) {
+        NormalizeUpperBound(upper_bound, ub_elem);
+      }
+    }
+  }
+}
+
+
+static void NormalizeLowerBound(UnionType* lower_bound, Type* lb) {
+  lower_bound->add_element(lb);
+
+  if (lb->kind() == Type::Kind::kMetavar) {
+    auto lb_metavar = lb->As<TypeMetavar>();
+    for (auto lb_elem : lb_metavar->lower_bound()->elements()) {
+      if (lb_elem->kind() != Type::Kind::kMetavar) {
+        NormalizeLowerBound(lower_bound, lb_elem);
+      }
+    }
+  }
+}
+
+
+Type* Type::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* parent) const {
   return const_cast<Type*>(this);
 }
 
 
-Type* TypeScheme::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_instantiated_vars) const {
+Type* TypeScheme::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* parent) const {
   // prepare subst: scheme->vars() => fresh metavars
-  Substitution subst;
+  Substitution subst(parent);
   for (auto tyvar : this->vars()) {
     auto metavar = new TypeMetavar();
-    subst.insert(tyvar, metavar);
-    out_instantiated_vars->push_back(metavar);
+    xylo_check(subst.Insert(tyvar, metavar));
+    out_vars->push_back(metavar);
     arena->adopt_type(TypePtr(metavar));
   }
 
@@ -1597,14 +1702,14 @@ Type* TypeScheme::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_instan
     // substitute upper bounds
     auto upper_bound = new IntersectionType();
     for (auto t : tyvar->upper_bound()->elements()) {
-      upper_bound->add_element(subst.Apply(t, arena));
+      NormalizeUpperBound(upper_bound, subst.Apply(t, arena));
     }
     metavar->set_upper_bound(IntersectionTypePtr(upper_bound));
 
     // substitute lower bounds
     auto lower_bound = new UnionType();
     for (auto t : tyvar->lower_bound()->elements()) {
-      lower_bound->add_element(subst.Apply(t, arena));
+      NormalizeLowerBound(lower_bound, subst.Apply(t, arena));
     }
     metavar->set_lower_bound(UnionTypePtr(lower_bound));
 
@@ -1616,6 +1721,159 @@ Type* TypeScheme::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_instan
   }
 
   return subst.Apply(this->body(), arena);
+}
+
+
+Type* TypeApplication::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* parent) const {
+  xylo_contract(substitution()->parent() == nullptr);
+  substitution()->set_parent(parent);
+  Finally _([this]() {
+    substitution()->set_parent(nullptr);
+  });
+
+  return target()->Instantiate(arena, out_vars, substitution());
+}
+
+
+template <typename T>
+static Type* ApplyPerElement(const Substitution* subst, Type* type, TypeArena* arena) {
+  auto container = type->template As<T>();
+  auto new_container = new T();
+
+  bool changed = false;
+  for (auto elem : container->elements()) {
+    auto sbsted_elem = subst->Apply(elem, arena);
+    new_container->add_element(sbsted_elem);
+    changed |= (sbsted_elem != elem);
+  }
+
+  if (changed) {
+    arena->adopt_type(TypePtr(new_container));
+    return new_container;
+  } else {
+    delete new_container;
+    return container;
+  }
+}
+
+
+Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const {
+  switch (type->kind()) {
+    case Type::Kind::kError:
+      return type;
+
+    case Type::Kind::kNominal: {
+      auto nominal = type->As<NominalType>();
+      if (nominal->scope() == nullptr || !nominal->scope()->is_inner_than_equal(this->scope_)) {
+        return type;
+      }
+
+      // The nominal type is defined within this substitution's scope,
+      // so we need to apply the substitution to its members.
+      auto new_nominal = new NominalType(nominal->category(), nominal->name());
+      new_nominal->set_scope(nominal->scope());
+      new_nominal->set_origin(nominal);
+      new_nominal->set_substitution(this->clone());
+      arena->adopt_type(TypePtr(new_nominal));
+      auto sbst = new_nominal->substitution();
+
+      for (auto super : nominal->supers()) {
+        auto sbsted_super = sbst->Apply(super, new_nominal);
+        new_nominal->AddSuper(sbsted_super->As<NominalType>());
+      }
+
+      for (auto embedded : nominal->embeddeds()) {
+        auto sbsted_type = sbst->Apply(embedded->type(), new_nominal);
+        new_nominal->AddEmbedded(embedded->name(), sbsted_type->As<NominalType>());
+      }
+
+      for (auto field : nominal->fields()) {
+        auto sbsted_type = sbst->Apply(field->type(), new_nominal);
+        new_nominal->AddField(field->name(), sbsted_type);
+      }
+
+      for (auto method : nominal->methods()) {
+        auto sbsted_type = method->type() ? sbst->Apply(method->type(), new_nominal, true) : nullptr;
+        auto member_info = new_nominal->AddMethod(method->name(), sbsted_type);
+        if (sbsted_type == nullptr) {
+          member_info->set_type_resolver([=]() {
+            method->resolve_type();
+            member_info->set_type(sbst->Apply(method->type(), new_nominal, true));
+          });
+        }
+      }
+
+      return new_nominal;
+    }
+
+    case Type::Kind::kMemberConstraint: {
+      auto memcon = type->As<MemberConstraint>();
+      auto sbsted_type = Apply(memcon->type(), arena);
+      if (sbsted_type == memcon->type()) {
+        return memcon;
+      } else {
+        auto new_memcon = new MemberConstraint(memcon->name(), sbsted_type);
+        new_memcon->SetMutable(memcon->is_mutable());
+        new_memcon->set_resolved(memcon->resolved());
+        new_memcon->set_origin_owner(memcon->origin_owner());
+        new_memcon->set_on_error(memcon->on_error());
+        arena->adopt_type(TypePtr(new_memcon));
+        return new_memcon;
+      }
+    }
+
+    case Type::Kind::kFunction: {
+      auto func = type->As<FunctionType>();
+      auto sbsted_params = Apply(func->params_type(), arena);
+      auto sbsted_return = Apply(func->return_type(), arena);
+
+      if (sbsted_params == func->params_type() && sbsted_return == func->return_type()) {
+        return func;
+      } else {
+        auto new_func = new FunctionType(func->is_closure(), sbsted_params->As<TupleType>(), sbsted_return);
+        arena->adopt_type(TypePtr(new_func));
+        return new_func;
+      }
+    }
+
+    case Type::Kind::kTuple:
+      return ApplyPerElement<TupleType>(this, type, arena);
+
+    case Type::Kind::kIntersection:
+      return ApplyPerElement<IntersectionType>(this, type, arena);
+
+    case Type::Kind::kUnion:
+      return ApplyPerElement<UnionType>(this, type, arena);
+
+    case Type::Kind::kTyvar: {
+      auto var = type->As<TypeVariable>();
+      auto it = entries_.find(var);
+      if ((it != entries_.end())) {
+        return Apply(it->second, arena);
+      } else if (parent_ != nullptr) {
+        return parent_->Apply(var, arena);
+      } else {
+        return var;
+      }
+    }
+
+    case Type::Kind::kMetavar:
+      return type;
+
+    case Type::Kind::kScheme:
+    case Type::Kind::kApplication: {
+      if (!savable_this) {
+        xylo_unreachable();
+      }
+
+      // defer substitution until instantiation
+      auto tyapp = new TypeApplication(type, const_cast<Substitution*>(this));
+      arena->adopt_type(TypePtr(tyapp));
+      return tyapp;
+    }
+  }
+
+  xylo_unreachable();
 }
 
 
@@ -1732,17 +1990,24 @@ Type* TupleType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) 
 
 
 Type* IntersectionType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
-  throw std::logic_error("not implemented: IntersectionType::Zonk");
+  xylo_contract(is_top_type());  // now only top type is allowed
+  return this;
 }
 
 
 Type* UnionType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
-  throw std::logic_error("not implemented: UnionType::Zonk");
+  xylo_contract(is_bottom_type());  // now only bottom type is allowed
+  return this;
 }
 
 
 Type* TypeVariable::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
-  return subst->Apply(this, arena);
+  auto zonked = subst->Apply(this, arena);
+  if (zonked != this) {
+    return zonked->Zonk(subst, strict, arena);
+  } else {
+    return zonked;
+  }
 }
 
 
@@ -1833,6 +2098,11 @@ Type* TypeScheme::Zonk(const Substitution* subst, bool strict, TypeArena* arena)
 }
 
 
+Type* TypeApplication::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
+  xylo_unreachable();
+}
+
+
 bool Type::IsGroundType() const {
   switch (kind()) {
     case Type::Kind::kError:
@@ -1862,6 +2132,7 @@ bool Type::IsGroundType() const {
     case Type::Kind::kTyvar:
     case Type::Kind::kMetavar:
     case Type::Kind::kScheme:
+    case Type::Kind::kApplication:
       return false;
   }
 
@@ -1900,6 +2171,9 @@ std::string TypePrinter::Print(const Type* type, bool paren, Status* status) con
 
     case Type::Kind::kScheme:
       return Print(type->As<TypeScheme>(), paren, status);
+
+    case Type::Kind::kApplication:
+      return Print(type->As<TypeApplication>(), paren, status);
   }
 
   xylo_unreachable();
@@ -1907,11 +2181,24 @@ std::string TypePrinter::Print(const Type* type, bool paren, Status* status) con
 
 
 std::string TypePrinter::Print(const NominalType* type, bool paren, Status* status) const {
+  std::string str = "";
+
   if (type->name()->str() != HString()) {
-    return type->name()->str().cpp_str();
+    str += type->name()->str().cpp_str();
   } else {
-    return "<" + std::to_string(reinterpret_cast<uintptr_t>(type)) + ">";
+    str += "<" + std::to_string(reinterpret_cast<uintptr_t>(type)) + ">";
   }
+
+  auto t = type;
+  while (t != nullptr) {
+    if (t->substitution() == nullptr) {
+      break;
+    }
+    str += Print(t->substitution(), status);
+    t = t->origin();
+  }
+
+  return str;
 }
 
 
@@ -2083,6 +2370,7 @@ std::string PrintCommonVar(T type, bool paren, bool is_metavar, const O& opt, S*
         status->alias_map.emplace(type, exact_type);
         return print(exact_type, paren, status);
       }
+      status->alias_map.emplace(exact_type, type);
     }
   }
 
@@ -2102,7 +2390,7 @@ std::string TypePrinter::Print(const TypeVariable* type, bool paren, Status* sta
   auto str = PrintCommonVar(type, paren, false, options_, status, [this](auto t, bool p, Status* s) {
     return Print(t, p, s);
   });
-  // str += std::to_string(type->depth());
+  // str += std::to_string(type->scope()->depth());
   return str;
 }
 
@@ -2132,6 +2420,42 @@ std::string TypePrinter::Print(const TypeScheme* type, bool paren, Status* statu
 
   str += "). ";
   str += Print(type->body(), false, status);
+
+  return str;
+}
+
+
+std::string TypePrinter::Print(const TypeApplication* type, bool paren, Status* status) const {
+  if (!options_.verbose) {
+    for (auto& [param, arg] : type->substitution()->entries()) {
+      status->alias_map.emplace(param, arg);
+    }
+    return Print(type->target(), paren, status);
+  }
+
+  std::string str = "";
+  str += Print(type->substitution(), status);
+  str += " ";
+  str += Print(type->target(), true, status);
+
+  return str;
+}
+
+
+std::string TypePrinter::Print(const Substitution* subst, Status* status) const {
+  std::string str = "";
+  str += "[";
+  bool first = true;
+  for (auto& [param, arg] : subst->entries()) {
+    if (!first) {
+      str += ", ";
+    }
+    first = false;
+    str += Print(param, false, status);
+    str += " := ";
+    str += Print(arg, false, status);
+  }
+  str += "]";
 
   return str;
 }
@@ -2266,7 +2590,7 @@ std::string TypePrinter::PrintConstraints(Status* status) const {
 
       if (bound.lowers->elements().size() > 1) {
         // multiple lowers: always print
-        lower_str += Print(var->lower_bound(), true, status);
+        lower_str += Print(bound.lowers.get(), true, status);
         lower_str += " <: ";
       }
       if (bound.lowers->elements().size() == 1) {
@@ -2283,7 +2607,7 @@ std::string TypePrinter::PrintConstraints(Status* status) const {
       if (bound.uppers->elements().size() > 1) {
         // multiple uppers: always print
         upper_str += " <: ";
-        upper_str += Print(var->upper_bound(), true, status);
+        upper_str += Print(bound.uppers.get(), true, status);
       }
       if (bound.uppers->elements().size() == 1) {
         // single upper: print only if not printed yet

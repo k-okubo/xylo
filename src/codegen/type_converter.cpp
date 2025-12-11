@@ -3,7 +3,6 @@
 
 #include <llvm/IR/DerivedTypes.h>
 
-#include "xylo/syntax/substitution.h"
 #include "xylo/util/vector.h"
 
 
@@ -29,6 +28,7 @@ llvm::Type* TypeConverter::Convert(xylo::Type* type, bool function_as_pointer) {
     case xylo::Type::Kind::kTyvar:
     case xylo::Type::Kind::kMetavar:
     case xylo::Type::Kind::kScheme:
+    case xylo::Type::Kind::kApplication:
       xylo_unreachable();
   }
 

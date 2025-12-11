@@ -258,7 +258,7 @@ llvm::Value* FunctionLowerer::BuildIdentifierExpression(IdentifierExpression* ex
 
     case Symbol::Kind::kLetVariable:
     case Symbol::Kind::kVarVariable:
-      if (symbol->is_captured() && symbol->scope()->depth() < xylo_func()->scope()->depth()) {
+      if (symbol->is_captured() && symbol->scope()->is_outer_than(xylo_func()->inner_scope())) {
         return BuildOuterEnvIdentifier(expr, out_closure_env);
       } else {
         return BuildLocalValueIdentifier(expr, out_closure_env);
@@ -366,6 +366,7 @@ llvm::Value* FunctionLowerer::BuildFunctionExpression(FunctionExpression* expr) 
   auto ext_subst = std::make_unique<Substitution>(subst());
   auto nested_lowerer = new FunctionLowerer(this, std::move(ext_subst), expr);
   nested_lowerer->set_func_name(String("anon"));
+  add_child(LoweringNodePtr(nested_lowerer));
   auto llvm_func = nested_lowerer->GetOrBuildFunction();
 
   if (expr->is_closure()) {
@@ -792,16 +793,20 @@ void FunctionLowerer::BuildExpressionInitializer(ExpressionInitializer* init, xy
 
 
 void FunctionLowerer::BuildObjectInitializer(ObjectInitializer* init, xylo::NominalType* obj_type, llvm::Value* ptr) {
-  auto class_lowerer = root()->GetClassLowerer(obj_type);
+  auto class_lowerer = GetClassLowerer(obj_type);
   xylo_contract(class_lowerer != nullptr);
 
-  auto class_symbol = class_lowerer->xylo_class()->symbol();
+  auto xylo_class = class_lowerer->xylo_class();
   auto struct_type = class_lowerer->GetOrCreateInstanceStruct();
 
   // store outer environment pointer
-  auto [env_ptr, _] = LoadOuterEnvironmentPtr(class_symbol);
   auto env_ptr_field = builder_.CreateStructGEP(struct_type, ptr, 0);
-  builder_.CreateStore(env_ptr, env_ptr_field);
+  if (xylo_class->is_closure()) {
+    auto [env_ptr, _] = LoadOuterEnvironmentPtr(xylo_class->symbol());
+    builder_.CreateStore(env_ptr, env_ptr_field);
+  } else {
+    builder_.CreateStore(null_ptr(), env_ptr_field);
+  }
 
   // store field init values
   for (auto& entry : init->entries()) {
@@ -975,7 +980,7 @@ llvm::Value* FunctionLowerer::AdjustType(llvm::Value* value, xylo::Type* zonked_
 
     if (from_nominal->category() == NominalType::Category::kClass) {
       // from_nominal is a class; get vtable from global constant
-      auto class_lowerer = root()->GetClassLowerer(from_nominal);
+      auto class_lowerer = GetClassLowerer(from_nominal);
       object_ptr = value;
       vtable_ptr = class_lowerer->GetVTablePtr();
       vtable_struct = class_lowerer->GetVTableStruct();
@@ -1047,7 +1052,7 @@ llvm::Value* FunctionLowerer::BuildHeapAlloc(llvm::Type* type) {
 
 llvm::Value* FunctionLowerer::StoreCapturedValue(Symbol* symbol, llvm::Value* value) {
   xylo_contract(symbol->is_captured());
-  xylo_contract(symbol->scope()->depth() == xylo_func()->scope()->depth());
+  xylo_contract(symbol->scope() == xylo_func()->inner_scope());
 
   auto index = symbol->captured_index() + 1;  // first index is for outer environment pointer
   return StoreToInnerEnv(index, value);
@@ -1070,6 +1075,7 @@ llvm::Value* FunctionLowerer::LoadThisPointer() {
     auto parent_ptr_field = builder_.CreateStructGEP(env_type, env_ptr, 0);
     auto parent_ptr = builder_.CreateLoad(env_type->getElementType(0), parent_ptr_field);
 
+    xylo_contract(lowerer->parent() != nullptr);
     lowerer = lowerer->parent();
     env_ptr = parent_ptr;
     env_type = lowerer->scope_data_type();
@@ -1084,7 +1090,7 @@ std::pair<llvm::Value*, llvm::StructType*> FunctionLowerer::LoadOuterEnvironment
   llvm::Value* env_ptr;
   llvm::StructType* env_type;
 
-  if (symbol->scope()->depth() < this->scope_depth()) {
+  if (symbol->scope()->is_outer_than(this->scope())) {
     lowerer = this->parent();
     env_ptr = this->outer_env_ptr();
     env_type = lowerer->scope_data_type();
@@ -1094,16 +1100,17 @@ std::pair<llvm::Value*, llvm::StructType*> FunctionLowerer::LoadOuterEnvironment
     env_type = this->inner_env_type();
   }
 
-  while (symbol->scope()->depth() < lowerer->scope_depth()) {
+  while (symbol->scope()->is_outer_than(lowerer->scope())) {
     auto parent_ptr_field = builder_.CreateStructGEP(env_type, env_ptr, 0);
     auto parent_ptr = builder_.CreateLoad(env_type->getElementType(0), parent_ptr_field);
 
+    xylo_contract(lowerer->parent() != nullptr);
     lowerer = lowerer->parent();
     env_ptr = parent_ptr;
     env_type = lowerer->scope_data_type();
   }
 
-  xylo_contract(symbol->scope()->depth() == lowerer->scope_depth());
+  xylo_contract(symbol->scope() == lowerer->scope());
   return {env_ptr, env_type};
 }
 

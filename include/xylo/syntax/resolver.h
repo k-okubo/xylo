@@ -49,7 +49,11 @@ class Resolver : public DiagnosticReporter {
  public:
   explicit Resolver(XyloContext* context) :
       DiagnosticReporter(),
-      context_(context) {}
+      context_(context),
+      class_map_(),
+      function_map_(),
+      class_states_(),
+      function_states_() {}
 
   ~Resolver() = default;
 
@@ -59,15 +63,21 @@ class Resolver : public DiagnosticReporter {
   void VisitFileAST(FileAST* file_ast, const NameTable* external_name_table = nullptr);
 
  protected:
+  struct Enclosure {
+    InterfaceDeclaration* interface;
+    ClassDeclaration* clazz;
+    FunctionExpression* func;
+  };
   struct ResolutionContext {
     NameTable* name_table;
-    Declaration* enclosing_class;
-    FunctionExpression* enclosing_func;
+    Enclosure enclosure;
   };
 
-  struct FunctionState {
-    int reference_depth = std::numeric_limits<int>::max();
-    Vector<std::function<void(const FunctionState&)>> on_update_reference_depth;
+  struct EntityState {
+    Scope* reference_scope;
+    Vector<std::function<void(const EntityState&)>> on_update_reference_scope;
+    explicit EntityState(Scope* reference_scope) :
+        reference_scope(reference_scope) {}
   };
 
   void PrevisitDeclaration(Declaration* decl, ResolutionContext* ctx);
@@ -75,7 +85,7 @@ class Resolver : public DiagnosticReporter {
   void VisitInterfaceDeclaration(InterfaceDeclaration* decl, ResolutionContext* ctx);
   void VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* ctx);
   void VisitClassField(ClassField* field, ResolutionContext* ctx);
-  void VisitEmbeddingClass(EmbeddingClass* embedding, ResolutionContext* ctx);
+  void VisitEmbeddedClass(EmbeddedClass* embedded, ClassDeclaration* embedding, ResolutionContext* ctx);
   void VisitSuperClass(SuperClass* super, ResolutionContext* ctx);
   void VisitFunctionDeclaration(FunctionDeclaration* decl, ResolutionContext* ctx);
 
@@ -113,16 +123,23 @@ class Resolver : public DiagnosticReporter {
   void CollectCapturedSymbols(FunctionExpression* func, Block* block);
   void MarkCapturedSymbol(FunctionExpression* func, Symbol* symbol);
 
+  ClassDeclaration* GetClass(Symbol* symbol);
   FunctionExpression* GetFunction(Symbol* symbol);
-  FunctionState& GetFunctionState(FunctionExpression* func);
 
+  EntityState& GetClassState(ClassDeclaration* clazz);
+  EntityState& GetFunctionState(FunctionExpression* func);
+
+  void RegisterDecledClass(Symbol* symbol, ClassDeclaration* clazz);
   void RegisterDecledFunction(Symbol* symbol, FunctionExpression* func);
   void RegisterLambdaFunction(FunctionExpression* func);
-  void OnUpdateReferencedDepth(FunctionExpression* func, std::function<void(const FunctionState&)>&& callback);
-  void InvokeUpdateReferencedDepth(const FunctionState& state);
+
+  void OnUpdateReferenceScope(ClassDeclaration* clazz, std::function<void(const EntityState&)>&& callback);
+  void OnUpdateReferenceScope(FunctionExpression* func, std::function<void(const EntityState&)>&& callback);
+  void InvokeUpdateReferenceScope(const EntityState& state);
 
   void MarkAsClosureIfNeeded(FunctionExpression* func, Symbol* reference_symbol);
-  void MarkAsClosureIfNeeded(FunctionExpression* func, int reference_depth);
+  void MarkAsClosureIfNeeded(FunctionExpression* func, Scope* reference_scope);
+  void MarkAsClosureIfNeeded(ClassDeclaration* clazz, Scope* reference_scope);
 
   void ErrorUndeclared(const SourceRange& position, Identifier* name);
   void ErrorRedefinition(const SourceRange& position, Identifier* name, const Symbol* previous_symbol);
@@ -131,8 +148,10 @@ class Resolver : public DiagnosticReporter {
 
  private:
   XyloContext* context_;
+  Map<Symbol*, ClassDeclaration*> class_map_;
   Map<Symbol*, FunctionExpression*> function_map_;
-  Map<FunctionExpression*, FunctionState> function_states_;
+  Map<ClassDeclaration*, EntityState> class_states_;
+  Map<FunctionExpression*, EntityState> function_states_;
 };
 
 

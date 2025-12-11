@@ -154,6 +154,40 @@ TEST(InterfaceTest, MultipleInterfaces) {
 }
 
 
+TEST(InterfaceTest, DifferentScope) {
+  auto source = R"(
+    def main() {
+      return outer(true, 42, 0).get_value()
+    }
+
+    def outer(c, a, b) {
+      return c ? create_foo() : create_bar()
+
+      def create_foo() {
+        return new Foo{}
+        class Foo : ValueGetter {
+          def get_value(): int => a
+        }
+      }
+
+      def create_bar() {
+        return new Bar{}
+        class Bar : ValueGetter {
+          def get_value(): int => b
+        }
+      }
+
+      interface ValueGetter {
+        def get_value(): int
+      }
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 42);
+}
+
+
 TEST(InterfaceTest, ImplementsUsingEmbedding) {
   auto source = R"(
     def main() {
@@ -194,7 +228,7 @@ TEST(InterfaceTest, ImplementsUsingEmbedding) {
 }
 
 
-TEST(InferencerTest, MultipleImplementsUsingEmbedding) {
+TEST(Interface, MultipleImplementsUsingEmbedding) {
   auto source = R"(
     def main() {
       let foo = new Foo{ Bar: { value: 0 } }

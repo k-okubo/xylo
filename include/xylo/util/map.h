@@ -61,8 +61,12 @@ class Map {
   auto end() noexcept { return impl_.end(); }
   auto end() const noexcept { return impl_.end(); }
 
+  auto clone() const { return Map<Key, T, Hash, Pred>(this->impl_); }
+
  private:
   base impl_;
+
+  explicit Map(const base& impl) : impl_(impl) {}
 };
 // clang-format on
 

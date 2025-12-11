@@ -31,7 +31,7 @@ class FunctionLowerer : public DeclarationLowerer {
   void set_func_name(String&& name) { func_name_ = std::move(name); }
 
   const String& mangled_name() const override { return func_name_; }
-  int scope_depth() const override { return xylo_func()->scope()->depth(); }
+  Scope* scope() const override { return xylo_func()->inner_scope(); }
   llvm::StructType* scope_data_type() const override { return inner_env_type(); }
 
   llvm::Function* GetOrBuildFunction();

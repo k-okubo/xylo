@@ -6,7 +6,7 @@ namespace xylo {
 
 void Resolver::VisitFileAST(FileAST* file_ast, const NameTable* external_name_table) {
   NameTable global_table(external_name_table);
-  ResolutionContext global_ctx = {&global_table, nullptr, nullptr};
+  ResolutionContext global_ctx = {&global_table, {nullptr, nullptr, nullptr}};
 
   // TODO: handle external functions
   Vector<FunctionExpressionPtr> external_functions;
@@ -50,9 +50,21 @@ void Resolver::PrevisitDeclaration(Declaration* decl, ResolutionContext* ctx) {
     ErrorRedefinition(symbol->position(), name, ctx->name_table->Lookup(name));
   }
 
-  if (decl->kind() == Declaration::Kind::kFunction) {
-    auto func_decl = decl->As<FunctionDeclaration>();
-    RegisterDecledFunction(symbol, func_decl->func());
+  switch (decl->kind()) {
+    case Declaration::Kind::kInterface:
+      break;
+
+    case Declaration::Kind::kClass: {
+      auto class_decl = decl->As<ClassDeclaration>();
+      RegisterDecledClass(symbol, class_decl);
+      break;
+    }
+
+    case Declaration::Kind::kFunction: {
+      auto func_decl = decl->As<FunctionDeclaration>();
+      RegisterDecledFunction(symbol, func_decl->func());
+      break;
+    }
   }
 }
 
@@ -80,7 +92,8 @@ void Resolver::VisitInterfaceDeclaration(InterfaceDeclaration* decl, ResolutionC
   }
 
   NameTable local_table(ctx->name_table);
-  ResolutionContext local_ctx = {&local_table, decl, nullptr};
+  ResolutionContext local_ctx = {&local_table, ctx->enclosure};
+  local_ctx.enclosure.interface = decl;
 
   for (auto& method : decl->methods()) {
     PrevisitDeclaration(method.get(), &local_ctx);
@@ -97,12 +110,13 @@ void Resolver::VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* 
     VisitSuperClass(super.get(), ctx);
   }
 
-  for (auto& embedding : decl->embeddings()) {
-    VisitEmbeddingClass(embedding.get(), ctx);
+  for (auto& embedded : decl->embeddeds()) {
+    VisitEmbeddedClass(embedded.get(), decl, ctx);
   }
 
   NameTable local_table(ctx->name_table);
-  ResolutionContext local_ctx = {&local_table, decl, nullptr};
+  ResolutionContext local_ctx = {&local_table, ctx->enclosure};
+  local_ctx.enclosure.clazz = decl;
 
   for (auto& field : decl->fields()) {
     VisitClassField(field.get(), &local_ctx);
@@ -115,6 +129,20 @@ void Resolver::VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* 
   for (auto& decl : decl->declarations()) {
     VisitDeclaration(decl.get(), &local_ctx);
   }
+
+  auto enclosing_class = ctx->enclosure.clazz;
+  auto enclosing_func = ctx->enclosure.func;
+  OnUpdateReferenceScope(decl, [=, this](const EntityState& state) {
+    if (enclosing_class != nullptr) {
+      MarkAsClosureIfNeeded(enclosing_class, state.reference_scope);
+    }
+    if (enclosing_func != nullptr) {
+      MarkAsClosureIfNeeded(enclosing_func, state.reference_scope);
+    }
+    if (decl->is_closure() && enclosing_func != nullptr) {
+      enclosing_func->set_has_closure(true);
+    }
+  });
 }
 
 
@@ -132,15 +160,20 @@ void Resolver::VisitClassField(ClassField* field, ResolutionContext* ctx) {
 }
 
 
-void Resolver::VisitEmbeddingClass(EmbeddingClass* embedding, ResolutionContext* ctx) {
-  auto symbol = ctx->name_table->Lookup(embedding->name());
+void Resolver::VisitEmbeddedClass(EmbeddedClass* embedded, ClassDeclaration* embedding, ResolutionContext* ctx) {
+  auto symbol = ctx->name_table->Lookup(embedded->name());
 
   if (symbol == nullptr) {
-    ErrorUndeclared(embedding->position(), embedding->name());
+    ErrorUndeclared(embedded->position(), embedded->name());
   } else if (symbol->kind() != Symbol::Kind::kClass) {
-    ErrorValueAsType(embedding->position(), symbol);
+    ErrorValueAsType(embedded->position(), symbol);
   } else {
-    embedding->set_symbol(symbol);
+    embedded->set_symbol(symbol);
+
+    auto embedded_decl = GetClass(symbol);
+    OnUpdateReferenceScope(embedded_decl, [=, this](const EntityState& state) {
+      MarkAsClosureIfNeeded(embedding, state.reference_scope);
+    });
   }
 }
 
@@ -176,7 +209,7 @@ void Resolver::VisitBlock(Block* block, ResolutionContext* ctx) {
     VisitStatement(stmt.get(), ctx);
   }
 
-  CollectCapturedSymbols(ctx->enclosing_func, block);
+  CollectCapturedSymbols(ctx->enclosure.func, block);
 }
 
 
@@ -291,10 +324,10 @@ void Resolver::VisitExpression(Expression* expr, ResolutionContext* ctx) {
 
 
 void Resolver::VisitThisExpression(ThisExpression* expr, ResolutionContext* ctx) {
-  if (ctx->enclosing_class == nullptr) {
+  if (ctx->enclosure.clazz == nullptr) {
     ReportError(expr->position(), "invalid use of 'this' outside of class contexts");
   } else {
-    expr->set_class_symbol(ctx->enclosing_class->symbol());
+    expr->set_class_symbol(ctx->enclosure.clazz->symbol());
   }
 }
 
@@ -316,13 +349,13 @@ void Resolver::VisitIdentifierExpression(IdentifierExpression* expr, ResolutionC
 
       case Symbol::Kind::kLetVariable:
       case Symbol::Kind::kVarVariable:
-        MarkAsClosureIfNeeded(ctx->enclosing_func, symbol);
+        MarkAsClosureIfNeeded(ctx->enclosure.func, symbol);
         break;
 
       case Symbol::Kind::kFunction: {
         auto reference_func = GetFunction(symbol);
-        auto enclosing_func = ctx->enclosing_func;
-        OnUpdateReferencedDepth(reference_func, [=, this](const FunctionState& state) {
+        auto enclosing_func = ctx->enclosure.func;
+        OnUpdateReferenceScope(reference_func, [=, this](const EntityState& state) {
           if (reference_func->is_closure()) {
             MarkAsClosureIfNeeded(enclosing_func, symbol);
           }
@@ -343,7 +376,8 @@ void Resolver::VisitTupleExpression(TupleExpression* expr, ResolutionContext* ct
 
 void Resolver::VisitFunctionExpression(FunctionExpression* expr, ResolutionContext* ctx, bool is_lambda) {
   NameTable local_table(ctx->name_table);
-  ResolutionContext local_ctx = {&local_table, ctx->enclosing_class, expr};
+  ResolutionContext local_ctx = {&local_table, ctx->enclosure};
+  local_ctx.enclosure.func = expr;
 
   if (is_lambda) {
     RegisterLambdaFunction(expr);
@@ -367,14 +401,18 @@ void Resolver::VisitFunctionExpression(FunctionExpression* expr, ResolutionConte
     VisitTypeRepr(expr->return_type_repr(), &local_ctx);
   }
 
-  if (ctx->enclosing_class != nullptr) {
+  if (ctx->enclosure.interface != nullptr || ctx->enclosure.clazz != nullptr) {
     expr->set_closure(true);
   }
 
-  auto enclosing_func = ctx->enclosing_func;
-  OnUpdateReferencedDepth(expr, [=, this](const FunctionState& state) {
+  auto enclosing_class = ctx->enclosure.clazz;
+  auto enclosing_func = ctx->enclosure.func;
+  OnUpdateReferenceScope(expr, [=, this](const EntityState& state) {
+    if (enclosing_class != nullptr) {
+      MarkAsClosureIfNeeded(enclosing_class, state.reference_scope);
+    }
     if (enclosing_func != nullptr) {
-      MarkAsClosureIfNeeded(enclosing_func, state.reference_depth);
+      MarkAsClosureIfNeeded(enclosing_func, state.reference_scope);
     }
     if (expr->is_closure() && enclosing_func != nullptr) {
       enclosing_func->set_has_closure(true);
@@ -418,6 +456,14 @@ void Resolver::VisitConstructExpression(ConstructExpression* expr, ResolutionCon
     ErrorValueAsType(expr->position(), class_symbol);
   } else {
     expr->set_class_symbol(class_symbol);
+
+    auto class_decl = GetClass(class_symbol);
+    auto enclosing_func = ctx->enclosure.func;
+    OnUpdateReferenceScope(class_decl, [=, this](const EntityState& state) {
+      if (class_decl->is_closure()) {
+        MarkAsClosureIfNeeded(enclosing_func, class_decl->symbol());
+      }
+    });
   }
 
   VisitObjectInitializer(expr->initializer(), ctx);
@@ -431,7 +477,7 @@ void Resolver::VisitSelectExpression(SelectExpression* expr, ResolutionContext* 
 
 void Resolver::VisitBlockExpression(BlockExpression* expr, ResolutionContext* ctx) {
   NameTable local_table(ctx->name_table);
-  ResolutionContext local_ctx = {&local_table, ctx->enclosing_class, ctx->enclosing_func};
+  ResolutionContext local_ctx = {&local_table, ctx->enclosure};
 
   VisitBlock(expr->block(), &local_ctx);
 }
@@ -555,6 +601,14 @@ void Resolver::MarkCapturedSymbol(FunctionExpression* func, Symbol* symbol) {
 }
 
 
+ClassDeclaration* Resolver::GetClass(Symbol* symbol) {
+  xylo_contract(symbol->kind() == Symbol::Kind::kClass);
+  auto it = class_map_.find(symbol);
+  xylo_contract(it != class_map_.end());
+  return it->second;
+}
+
+
 FunctionExpression* Resolver::GetFunction(Symbol* symbol) {
   xylo_contract(symbol->kind() == Symbol::Kind::kFunction);
   auto it = function_map_.find(symbol);
@@ -563,57 +617,92 @@ FunctionExpression* Resolver::GetFunction(Symbol* symbol) {
 }
 
 
-Resolver::FunctionState& Resolver::GetFunctionState(FunctionExpression* func) {
+Resolver::EntityState& Resolver::GetClassState(ClassDeclaration* clazz) {
+  auto it = class_states_.find(clazz);
+  xylo_contract(it != class_states_.end());
+  return it->second;
+}
+
+
+Resolver::EntityState& Resolver::GetFunctionState(FunctionExpression* func) {
   auto it = function_states_.find(func);
   xylo_contract(it != function_states_.end());
   return it->second;
 }
 
 
+void Resolver::RegisterDecledClass(Symbol* symbol, ClassDeclaration* clazz) {
+  class_map_.emplace(symbol, clazz);
+  class_states_.emplace(clazz, EntityState(clazz->inner_scope()));
+}
+
+
 void Resolver::RegisterDecledFunction(Symbol* symbol, FunctionExpression* func) {
   function_map_.emplace(symbol, func);
-  function_states_.emplace(func, FunctionState());
+  function_states_.emplace(func, EntityState(func->inner_scope()));
 }
 
 
 void Resolver::RegisterLambdaFunction(FunctionExpression* func) {
-  function_states_.emplace(func, FunctionState());
+  function_states_.emplace(func, EntityState(func->inner_scope()));
 }
 
 
-void Resolver::OnUpdateReferencedDepth(FunctionExpression* func, std::function<void(const FunctionState&)>&& callback) {
+void Resolver::OnUpdateReferenceScope(ClassDeclaration* clazz, std::function<void(const EntityState&)>&& callback) {
+  auto& state = GetClassState(clazz);
+  callback(state);
+  state.on_update_reference_scope.push_back(std::move(callback));
+}
+
+
+void Resolver::OnUpdateReferenceScope(FunctionExpression* func, std::function<void(const EntityState&)>&& callback) {
   auto& state = GetFunctionState(func);
   callback(state);
-  state.on_update_reference_depth.push_back(std::move(callback));
+  state.on_update_reference_scope.push_back(std::move(callback));
 }
 
 
-void Resolver::InvokeUpdateReferencedDepth(const FunctionState& state) {
-  for (auto& callback : state.on_update_reference_depth) {
+void Resolver::InvokeUpdateReferenceScope(const EntityState& state) {
+  for (auto& callback : state.on_update_reference_scope) {
     callback(state);
   }
 }
 
 
 void Resolver::MarkAsClosureIfNeeded(FunctionExpression* func, Symbol* reference_symbol) {
-  auto depth = reference_symbol->scope()->depth();
-  MarkAsClosureIfNeeded(func, depth);
+  auto reference_scope = reference_symbol->scope();
+  MarkAsClosureIfNeeded(func, reference_scope);
 
-  if (depth < func->scope()->depth()) {
+  if (reference_scope->is_outer_than(func->inner_scope())) {
     reference_symbol->set_captured(true);
   }
 }
 
 
-void Resolver::MarkAsClosureIfNeeded(FunctionExpression* func, int reference_depth) {
+void Resolver::MarkAsClosureIfNeeded(FunctionExpression* func, Scope* reference_scope) {
   auto& state = GetFunctionState(func);
-  if (state.reference_depth > reference_depth) {
-    state.reference_depth = reference_depth;
-    if (reference_depth < func->scope()->depth()) {
+  if (reference_scope->is_outer_than(state.reference_scope)) {
+    state.reference_scope = reference_scope;
+
+    if (reference_scope->is_outer_than(func->inner_scope())) {
       func->set_closure(true);
     }
 
-    InvokeUpdateReferencedDepth(state);
+    InvokeUpdateReferenceScope(state);
+  }
+}
+
+
+void Resolver::MarkAsClosureIfNeeded(ClassDeclaration* clazz, Scope* reference_scope) {
+  auto& state = GetClassState(clazz);
+  if (reference_scope->is_outer_than(state.reference_scope)) {
+    state.reference_scope = reference_scope;
+
+    if (reference_scope->is_outer_than(clazz->inner_scope())) {
+      clazz->set_closure(true);
+    }
+
+    InvokeUpdateReferenceScope(state);
   }
 }
 

@@ -120,6 +120,7 @@ int main(int argc, char** argv) {
     PrintError(parser);
     return 1;
   }
+  context.root_scope()->Tour();
 
   xylo::Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());

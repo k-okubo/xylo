@@ -23,6 +23,7 @@ static FileASTPtr GetInferredAST(XyloContext* context, const char* source) {
 
   auto file_ast = parser.ParseFile();
   assert(!parser.has_diagnostics());
+  context->root_scope()->Tour();
 
   resolver.VisitFileAST(file_ast.get());
   assert(!resolver.has_diagnostics());

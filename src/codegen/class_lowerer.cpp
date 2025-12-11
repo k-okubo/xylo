@@ -20,8 +20,8 @@ llvm::StructType* ClassLowerer::GetOrCreateInstanceStruct() {
   }
 
   // ensure embedded and super classes are created
-  for (auto& embed : xylo_class()->embeddings()) {
-    LoweringNode::GetOrCreateInstanceStruct(embed->symbol());
+  for (auto& embedded : xylo_class()->embeddeds()) {
+    LoweringNode::GetOrCreateInstanceStruct(embedded->symbol());
   }
   for (auto& super : xylo_class()->supers()) {
     LoweringNode::GetOrCreateVTableStruct(super->symbol());
@@ -43,14 +43,14 @@ llvm::StructType* ClassLowerer::CreateInstanceStruct() {
   TypeConverter tc(xylo_context(), llvm_context());
   auto nominal = xylo_nominal();
 
-  auto entries_count = nominal->embeddings().size() + nominal->fields().size() + 1;
+  auto entries_count = nominal->embeddeds().size() + nominal->fields().size() + 1;
   Vector<llvm::Type*> struct_entries(entries_count);
-  struct_entries[0] = tc.PointerType();  // reserved: outer environment
+  struct_entries[0] = tc.PointerType();  // outer environment
 
-  for (auto embedding : nominal->embeddings()) {
-    auto embed_type = embedding->type()->As<NominalType>();
-    auto index = embedding->index();
-    struct_entries[index + 1] = GetInstanceStruct(embed_type);
+  for (auto embedded : nominal->embeddeds()) {
+    auto embedded_type = embedded->type()->As<NominalType>();
+    auto index = embedded->index();
+    struct_entries[index + 1] = GetInstanceStruct(embedded_type);
   }
 
   for (auto field : nominal->fields()) {
@@ -87,7 +87,7 @@ llvm::GlobalVariable* ClassLowerer::CreateVTableGlobal() {
 
   auto linkage = llvm::GlobalValue::ExternalLinkage;
   auto name = TypeConverter::ToStringRef(constant_name);
-  return new llvm::GlobalVariable(*root()->llvm_module(), vtable_struct_, true, linkage, nullptr, name);
+  return new llvm::GlobalVariable(*llvm_module(), vtable_struct_, true, linkage, nullptr, name);
 }
 
 

@@ -38,36 +38,6 @@ void ProgramLowerer::BuildEntryPoint(const llvm::Twine& name, Symbol* main_symbo
 }
 
 
-void ProgramLowerer::RegisterInterfaceLowerer(NominalType* type, InterfaceLowerer* lowerer) {
-  interface_lowerers_.emplace(type, lowerer);
-}
-
-
-InterfaceLowerer* ProgramLowerer::GetInterfaceLowerer(NominalType* type) {
-  auto it = interface_lowerers_.find(type);
-  if (it != interface_lowerers_.end()) {
-    return it->second;
-  } else {
-    return nullptr;
-  }
-}
-
-
-void ProgramLowerer::RegisterClassLowerer(NominalType* type, ClassLowerer* lowerer) {
-  class_lowerers_.emplace(type, lowerer);
-}
-
-
-ClassLowerer* ProgramLowerer::GetClassLowerer(NominalType* type) {
-  auto it = class_lowerers_.find(type);
-  if (it != class_lowerers_.end()) {
-    return it->second;
-  } else {
-    return nullptr;
-  }
-}
-
-
 llvm::IntegerType* ProgramLowerer::size_type() {
   const auto& DL = llvm_module()->getDataLayout();
   return llvm::IntegerType::get(llvm_context(), DL.getPointerSizeInBits());

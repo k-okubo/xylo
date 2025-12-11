@@ -19,6 +19,7 @@ FileASTPtr GetVerifiedAST(XyloContext* context, const char* source) {
   Parser parser(context, &lexer);
   auto file_ast = parser.ParseFile();
   xylo_contract(!parser.has_diagnostics());
+  context->root_scope()->Tour();
 
   Resolver resolver(context);
   resolver.VisitFileAST(file_ast.get());

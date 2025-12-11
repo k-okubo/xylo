@@ -22,6 +22,7 @@ TEST(ResolverTest, VisitFileAST_Basic) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -55,6 +56,7 @@ TEST(ResolverTest, VisitFileAST_UndefinedIdentifier) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -74,6 +76,7 @@ TEST(ResolverTest, VisitFileAST_DuplicateFunction) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -98,6 +101,7 @@ TEST(ResolverTest, VisitFileAST_DuplicateParameter) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -121,6 +125,7 @@ TEST(ResolverTest, VisitFileAST_DuplicateVariable) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -145,6 +150,7 @@ TEST(ResolverTest, VisitFileAST_NestedBlockScopes) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -160,6 +166,7 @@ TEST(ResolverTest, VisitFileAST_NestedBlockScopes_DupVar) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -175,6 +182,7 @@ TEST(ResolverTest, VisitFileAST_NestedBlockScopes_WrongReference) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -201,6 +209,7 @@ TEST(ResolverTest, VisitFileAST_ParamCaptureClosure) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -256,6 +265,7 @@ TEST(ResolverTest, VisitFileAST_FuncCaptureClosure) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -304,6 +314,7 @@ TEST(ResolverTest, VisitFileAST_DeepClosure) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -340,6 +351,7 @@ TEST(ResolverTest, VisitFileAST_NewExpression) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -373,6 +385,7 @@ TEST(ResolverTest, VisitFileAST_NewExpression_UndefinedClass) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -392,6 +405,7 @@ TEST(ResolverTest, VisitFileAST_NewExpression_DuplicateInitializer) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -411,6 +425,7 @@ TEST(ResolverTest, VisitFileAST_NewExpression_NonClass) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -430,6 +445,7 @@ TEST(ResolverTest, VisitFileAST_DuplicateField) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -454,6 +470,7 @@ TEST(ResolverTest, VisitFileAST_DuplicateMember) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -478,6 +495,7 @@ TEST(ResolverTest, VisitFileAST_MethodAndField) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -506,7 +524,6 @@ TEST(ResolverTest, VisitFileAST_MethodAndField) {
 }
 
 
-#if 0
 TEST(ResolverTest, VisitFileAST_InnerClassInClass) {
   auto source = R"(
     class Outer {
@@ -527,6 +544,7 @@ TEST(ResolverTest, VisitFileAST_InnerClassInClass) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -552,7 +570,10 @@ TEST(ResolverTest, VisitFileAST_InnerClassInClass) {
   auto return_stmt = statements[0]->As<ReturnStatement>();
   auto return_expr = return_stmt->expr();
   auto ident_expr = return_expr->As<IdentifierExpression>();
+
   EXPECT_EQ(ident_expr->symbol(), outer_field_symbol);
+  EXPECT_FALSE(outer_class_decl->is_closure());
+  EXPECT_TRUE(inner_class_decl->is_closure());
 }
 
 
@@ -572,6 +593,7 @@ TEST(ResolverTest, VisitFileAST_InnerClassInFunc) {
   Parser parser(&context, &lexer);
   auto file_ast = parser.ParseFile();
   ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
 
   Resolver resolver(&context);
   resolver.VisitFileAST(file_ast.get());
@@ -601,8 +623,100 @@ TEST(ResolverTest, VisitFileAST_InnerClassInFunc) {
 
   EXPECT_TRUE(outer_param_symbol->is_captured());
   EXPECT_EQ(outer_param_symbol->captured_index(), 0);
+  EXPECT_TRUE(outer_func->has_closure());
+  EXPECT_TRUE(inner_class_decl->is_closure());
 }
-#endif
+
+
+TEST(ResolverTest, VisitFileAST_ClosureClassConstruction) {
+  auto source = R"(
+    def outer(v) {
+      def inner() {
+        return new Foo{}
+      }
+      class Foo {
+        def get_value() => v
+      }
+    }
+  )";
+
+  XyloContext context;
+  Lexer lexer(&context, source);
+  Parser parser(&context, &lexer);
+  auto file_ast = parser.ParseFile();
+  ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
+
+  Resolver resolver(&context);
+  resolver.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(resolver.has_diagnostics());
+
+  auto& declarations = file_ast->declarations();
+  ASSERT_EQ(declarations.size(), 1u);
+
+  auto outer_func_decl = declarations[0]->As<FunctionDeclaration>();
+  auto outer_func = outer_func_decl->func();
+  ASSERT_EQ(outer_func->body()->declarations().size(), 2u);
+
+  auto inner_func_decl = outer_func->body()->declarations()[0]->As<FunctionDeclaration>();
+  auto inner_func = inner_func_decl->func();
+
+  auto foo_class_decl = outer_func->body()->declarations()[1]->As<ClassDeclaration>();
+
+  EXPECT_TRUE(inner_func->is_closure());
+  EXPECT_TRUE(outer_func->has_closure());
+  EXPECT_TRUE(foo_class_decl->is_closure());
+}
+
+
+TEST(ResolverTest, VisitFileAST_EmbeddedClosureClass) {
+  auto source = R"(
+    def outer(v) {
+      def inner(v) {
+        new Foo{ Bar: {} }
+
+        class Foo {
+          embed Bar
+        }
+      }
+
+      class Bar {
+        def get_value() => v
+      }
+    }
+  )";
+
+  XyloContext context;
+  Lexer lexer(&context, source);
+  Parser parser(&context, &lexer);
+  auto file_ast = parser.ParseFile();
+  ASSERT_FALSE(parser.has_diagnostics());
+  context.root_scope()->Tour();
+
+  Resolver resolver(&context);
+  resolver.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(resolver.has_diagnostics());
+
+  auto& declarations = file_ast->declarations();
+  ASSERT_EQ(declarations.size(), 1u);
+
+  auto outer_func_decl = declarations[0]->As<FunctionDeclaration>();
+  auto outer_func = outer_func_decl->func();
+  ASSERT_EQ(outer_func->body()->declarations().size(), 2u);
+
+  auto inner_func_decl = outer_func->body()->declarations()[0]->As<FunctionDeclaration>();
+  auto inner_func = inner_func_decl->func();
+
+  auto foo_class_decl = inner_func->body()->declarations()[0]->As<ClassDeclaration>();
+  auto bar_class_decl = outer_func->body()->declarations()[1]->As<ClassDeclaration>();
+
+  EXPECT_TRUE(inner_func->is_closure());
+  EXPECT_FALSE(outer_func->is_closure());
+  EXPECT_TRUE(inner_func->has_closure());
+  EXPECT_TRUE(outer_func->has_closure());
+  EXPECT_TRUE(foo_class_decl->is_closure());
+  EXPECT_TRUE(bar_class_decl->is_closure());
+}
 
 
 }  // namespace xylo

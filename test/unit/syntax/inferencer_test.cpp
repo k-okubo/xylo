@@ -7,7 +7,6 @@
 #include "xylo/syntax/lexer.h"
 #include "xylo/syntax/parser.h"
 #include "xylo/syntax/resolver.h"
-#include "xylo/syntax/substitution.h"
 
 namespace xylo {
 
@@ -15,61 +14,16 @@ static_assert(!std::copyable<Inferencer>);
 static_assert(!std::movable<Inferencer>);
 
 
-class Externals {
- public:
-  explicit Externals(XyloContext* context) :
-      name_table_(nullptr),
-      animal_symbol_(Symbol::Kind::kClass, context->root_scope(), context->InternIdentifier("Animal")),
-      dog_symbol_(Symbol::Kind::kClass, context->root_scope(), context->InternIdentifier("Dog")),
-      cat_symbol_(Symbol::Kind::kClass, context->root_scope(), context->InternIdentifier("Cat")),
-      animal_type_(NominalType::Category::kClass, animal_symbol_.name()),
-      dog_type_(NominalType::Category::kClass, dog_symbol_.name()),
-      cat_type_(NominalType::Category::kClass, cat_symbol_.name()) {
-    // inheritance relationships
-    dog_type_.AddSuper(&animal_type_);
-    cat_type_.AddSuper(&animal_type_);
-
-    animal_symbol_.set_type(&animal_type_);
-    dog_symbol_.set_type(&dog_type_);
-    cat_symbol_.set_type(&cat_type_);
-
-    name_table_.Insert(animal_symbol_.name(), &animal_symbol_);
-    name_table_.Insert(dog_symbol_.name(), &dog_symbol_);
-    name_table_.Insert(cat_symbol_.name(), &cat_symbol_);
-  }
-
-  const NameTable* name_table() const { return &name_table_; }
-
-  Symbol* animal_symbol() { return &animal_symbol_; }
-  Symbol* dog_symbol() { return &dog_symbol_; }
-  Symbol* cat_symbol() { return &cat_symbol_; }
-
-  Type* animal_type() { return &animal_type_; }
-  Type* dog_type() { return &dog_type_; }
-  Type* cat_type() { return &cat_type_; }
-
- private:
-  NameTable name_table_;
-
-  Symbol animal_symbol_;
-  Symbol dog_symbol_;
-  Symbol cat_symbol_;
-
-  NominalType animal_type_;
-  NominalType dog_type_;
-  NominalType cat_type_;
-};
-
-
-static FileASTPtr GetResolvedAST(XyloContext* context, const Externals* externals, const char* source) {
+static FileASTPtr GetResolvedAST(XyloContext* context, const char* source) {
   Lexer lexer(context, source);
   Parser parser(context, &lexer);
   Resolver resolver(context);
 
   auto file_ast = parser.ParseFile();
   assert(!parser.has_diagnostics());
+  context->root_scope()->Tour();
 
-  resolver.VisitFileAST(file_ast.get(), externals->name_table());
+  resolver.VisitFileAST(file_ast.get());
   assert(!resolver.has_diagnostics());
 
   return file_ast;
@@ -85,8 +39,7 @@ TEST(InferencerTest, LiteralAndLet) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -118,8 +71,7 @@ TEST(InferencerTest, LiteralAndVar) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -152,8 +104,7 @@ TEST(InferencerTest, BindUnitToLet) {
     }
   )";
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -187,8 +138,7 @@ TEST(InferencerTest, BindUnitToVar) {
     }
   )";
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -221,8 +171,7 @@ TEST(InferencerTest, CompareSameType) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -253,8 +202,7 @@ TEST(InferencerTest, CompareDifferentTypes) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -279,8 +227,7 @@ TEST(InferencerTest, ConditionIsNotBool) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -301,8 +248,7 @@ TEST(InferencerTest, CannotAssignToLetVariable) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -323,8 +269,7 @@ TEST(InferencerTest, CannotAssignToExpression) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -348,8 +293,7 @@ TEST(InferencerTest, CannotAssignToFunction) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -369,8 +313,7 @@ TEST(InferencerTest, CannotBindSingleBranch) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -390,8 +333,7 @@ TEST(InferencerTest, CannotBindEmptyBranch) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -411,8 +353,7 @@ TEST(InferencerTest, CannotBindBranchWithoutExpression) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -432,8 +373,7 @@ TEST(InferencerTest, CannotBindBottomType) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -454,17 +394,18 @@ TEST(InferencerTest, ConstTypeFunction) {
     def GetDog() {
       return new Dog{}
     }
+
+    class Dog {}
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_FALSE(inferencer.has_diagnostics());
 
-  ASSERT_GE(file_ast->declarations().size(), 2);
+  ASSERT_GE(file_ast->declarations().size(), 3);
   ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
   auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
   auto& main_statements = main_decl->func()->body()->statements();
@@ -473,9 +414,12 @@ TEST(InferencerTest, ConstTypeFunction) {
   auto let_stmt = main_statements[0]->As<LetStatement>();
   auto apply_expr = let_stmt->expr();
 
+  auto dog_class_decl = file_ast->declarations()[2]->As<ClassDeclaration>();
+  auto dog_type = dog_class_decl->symbol()->type();
+
   Substitution subst;
   TypeArena arena;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), externals.dog_type());
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), dog_type);
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "() -> Dog");
@@ -495,8 +439,7 @@ TEST(InferencerTest, FuncTypeRepr_ParamTuple) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -517,8 +460,7 @@ TEST(InferencerTest, FuncTypeRepr_ReturnTuple) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -539,8 +481,7 @@ TEST(InferencerTest, FuncTypeRepr_VoidToUnit) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -576,11 +517,13 @@ TEST(InferencerTest, ReturnTypeMismatch_Explicit) {
     def GetDog(): Dog {
       return new Cat{}
     }
+
+    class Dog {}
+    class Cat {}
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -605,11 +548,12 @@ TEST(InferencerTest, ReturnTypeMismatch_Inferred) {
         return 10
       }
     }
+
+    class Dog {}
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -632,8 +576,7 @@ TEST(InferencerTest, ReturnTypeMismatch_MissingValue) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -656,8 +599,7 @@ TEST(InferencerTest, AddFunction_Polymorphic) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -702,8 +644,7 @@ TEST(InferencerTest, AddFunction_DeclaredTypes) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -723,17 +664,19 @@ TEST(InferencerTest, IdentityFunction_NominalType) {
     }
 
     def id(x) => x
+
+    class Dog {}
+    class Cat {}
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_FALSE(inferencer.has_diagnostics());
 
-  ASSERT_GE(file_ast->declarations().size(), 2);
+  ASSERT_GE(file_ast->declarations().size(), 4);
   ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
   auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
   auto& main_statements = main_decl->func()->body()->statements();
@@ -745,10 +688,15 @@ TEST(InferencerTest, IdentityFunction_NominalType) {
   auto let_stmt2 = main_statements[1]->As<LetStatement>();
   auto apply_expr2 = let_stmt2->expr();
 
+  auto dog_class_decl = file_ast->declarations()[2]->As<ClassDeclaration>();
+  auto dog_type = dog_class_decl->symbol()->type();
+  auto cat_class_decl = file_ast->declarations()[3]->As<ClassDeclaration>();
+  auto cat_type = cat_class_decl->symbol()->type();
+
   Substitution subst;
   TypeArena arena;
-  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), externals.dog_type());
-  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), externals.cat_type());
+  EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), dog_type);
+  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), cat_type);
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "Forall (A). A -> A");
@@ -769,8 +717,7 @@ TEST(InferencerTest, IdentityFunction_FunctionType) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -813,8 +760,7 @@ TEST(InferencerTest, ApplyFunction) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -860,17 +806,20 @@ TEST(InferencerTest, ApplyFunction_WithTypeConstraints1) {
     def CreateCat(x) {
       return new Cat{}
     }
+
+    interface Animal {}
+    class Dog : Animal {}
+    class Cat : Animal {}
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_FALSE(inferencer.has_diagnostics());
 
-  ASSERT_GE(file_ast->declarations().size(), 3);
+  ASSERT_GE(file_ast->declarations().size(), 6);
   ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
   auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
   auto& main_statements = main_decl->func()->body()->statements();
@@ -879,9 +828,12 @@ TEST(InferencerTest, ApplyFunction_WithTypeConstraints1) {
   auto let_stmt = main_statements[0]->As<LetStatement>();
   auto apply_expr = let_stmt->expr();
 
+  auto animal_interface_decl = file_ast->declarations()[3]->As<InterfaceDeclaration>();
+  auto animal_type = animal_interface_decl->symbol()->type();
+
   Substitution subst;
   TypeArena arena;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), externals.animal_type());
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), animal_type);
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
@@ -908,11 +860,12 @@ TEST(InferencerTest, ApplyFunction_WithTypeConstraints2) {
     def GetZero(x) {
       return 0
     }
+
+    class Dog {}
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -940,8 +893,7 @@ TEST(InferencerTest, FunctionParameterMultiUse) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -978,8 +930,7 @@ TEST(InferencerTest, CurriedFunction_Simple) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1029,8 +980,7 @@ TEST(InferencerTest, CurriedFunction_InnerFuncNotPolymorphic) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1056,17 +1006,18 @@ TEST(InferencerTest, NestedFunction_ReturnsOuterVar) {
         return a
       }
     }
+
+    class Dog {}
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_FALSE(inferencer.has_diagnostics());
 
-  ASSERT_GE(file_ast->declarations().size(), 2);
+  ASSERT_GE(file_ast->declarations().size(), 3);
   ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
   auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
   auto& main_statements = main_decl->func()->body()->statements();
@@ -1075,9 +1026,12 @@ TEST(InferencerTest, NestedFunction_ReturnsOuterVar) {
   auto let_stmt = main_statements[0]->As<LetStatement>();
   auto apply_expr = let_stmt->expr();
 
+  auto dog_class_decl = file_ast->declarations()[2]->As<ClassDeclaration>();
+  auto dog_type = dog_class_decl->symbol()->type();
+
   Substitution subst;
   TypeArena arena;
-  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), externals.dog_type());
+  EXPECT_EQ(apply_expr->type()->Zonk(&subst, true, &arena), dog_type);
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()), "Forall (A). A -> A");
@@ -1104,17 +1058,18 @@ TEST(InferencerTest, NestedFunction_InnerFuncPolymorphic) {
 
     def add_one(x) => x + 1
     def id(x) => x
+
+    class Dog {}
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_FALSE(inferencer.has_diagnostics());
 
-  ASSERT_GE(file_ast->declarations().size(), 4);
+  ASSERT_GE(file_ast->declarations().size(), 5);
   ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
   auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
   auto& main_statements = main_decl->func()->body()->statements();
@@ -1126,10 +1081,13 @@ TEST(InferencerTest, NestedFunction_InnerFuncPolymorphic) {
   auto let_stmt2 = main_statements[1]->As<LetStatement>();
   auto apply_expr2 = let_stmt2->expr();
 
+  auto dog_class_decl = file_ast->declarations()[4]->As<ClassDeclaration>();
+  auto dog_type = dog_class_decl->symbol()->type();
+
   Substitution subst;
   TypeArena arena;
   EXPECT_EQ(apply_expr1->type()->Zonk(&subst, true, &arena), context.int_type());
-  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), externals.dog_type());
+  EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), dog_type);
 
   TypePrinter vtp({.verbose = true});
   EXPECT_EQ(
@@ -1153,8 +1111,7 @@ TEST(InferencerTest, RecursiveFunction_NoTypeRepr) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1178,8 +1135,7 @@ TEST(InferencerTest, RecursiveFunction_WithTypeRepr) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1217,8 +1173,7 @@ TEST(InferencerTest, InvalidRecursiveFunction) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1252,8 +1207,7 @@ TEST(InferencerTest, MutualRecursion_NoTypeRepr) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1282,8 +1236,7 @@ TEST(InferencerTest, MutualRecursion_WithTypeRepr) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1333,8 +1286,7 @@ TEST(InferencerTest, TypeInferenceByNestedFunc) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1359,8 +1311,7 @@ TEST(InferencerTest, MergeType_Incompatible_Direct) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1388,8 +1339,7 @@ TEST(InferencerTest, MergeType_Incompatible_FuncParam) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1416,8 +1366,7 @@ TEST(InferencerTest, MergeType_IncompatibleButUnused) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1440,8 +1389,7 @@ TEST(InferencerTest, CannotCallNonFunction) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1462,8 +1410,7 @@ TEST(InferencerTest, CannotCallExpression) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1487,8 +1434,7 @@ TEST(InferencerTest, NewObject) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1539,8 +1485,7 @@ TEST(InferencerTest, NewObject_MissingField) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1562,8 +1507,7 @@ TEST(InferencerTest, NewObject_ExtraField) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1585,8 +1529,7 @@ TEST(InferencerTest, NewObject_IncompatibleType) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1614,8 +1557,7 @@ TEST(InferencerTest, SetterFunction) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1642,8 +1584,7 @@ TEST(InferencerTest, GetterFunction) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1669,8 +1610,7 @@ TEST(InferencerTest, CannotFindMember_DirectRead) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1693,8 +1633,7 @@ TEST(InferencerTest, CannotFindMember_DirectWrite) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1721,8 +1660,7 @@ TEST(InferencerTest, CannotFindMember_FunctionRead) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1753,8 +1691,7 @@ TEST(InferencerTest, CannotFindMember_FunctionWrite) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1781,8 +1718,7 @@ TEST(InferencerTest, IncompatibleMemberType_Direct) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1809,8 +1745,7 @@ TEST(InferencerTest, IncompatibleMemberType_Function) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1839,8 +1774,7 @@ TEST(InferencerTest, CannotAssignToMethod_Direct) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1869,8 +1803,7 @@ TEST(InferencerTest, CannotAssignToMethod_Function) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1914,8 +1847,7 @@ TEST(InferencerTest, MethodConstraintInNestedFunc) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1942,8 +1874,7 @@ TEST(InferencerTest, MultiReadFieldFunction) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -1972,8 +1903,7 @@ TEST(InferencerTest, GetterMethod) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2009,8 +1939,7 @@ TEST(InferencerTest, SetterMethod) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2037,9 +1966,7 @@ TEST(InferencerTest, RecursiveMethod_NoTypeRepr) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
-
+  auto file_ast = GetResolvedAST(&context, source);
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_TRUE(inferencer.has_diagnostics());
@@ -2065,8 +1992,7 @@ TEST(InferencerTest, RecursiveMethod_WithTypeRepr) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2117,8 +2043,7 @@ TEST(InferencerTest, MutualRecursionMethod_NoTypeRepr) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2150,8 +2075,7 @@ TEST(InferencerTest, MutualRecursionMethod_WithTypeRepr) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2217,8 +2141,7 @@ TEST(InferencerTest, MutualRecursionMethod_WithFunc) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2257,8 +2180,7 @@ TEST(InferencerTest, CircularReferenceInClass) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2281,7 +2203,6 @@ TEST(InferencerTest, CircularReferenceInClass) {
 }
 
 
-#if 0
 TEST(InferencerTest, NestedClassInPolymorphicFunction1) {
   auto source = R"(
     def main() {
@@ -2299,8 +2220,7 @@ TEST(InferencerTest, NestedClassInPolymorphicFunction1) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2328,9 +2248,13 @@ TEST(InferencerTest, NestedClassInPolymorphicFunction1) {
 TEST(InferencerTest, NestedClassInPolymorphicFunction2) {
   auto source = R"(
     def main() {
-      let inst = outer(true)
+      let inst = bridge()
       let a = inst.get(new Dog{})
       let b = inst.get(new Cat{})
+    }
+
+    def bridge() {
+      return outer(true)
     }
 
     def outer(c) {
@@ -2344,21 +2268,27 @@ TEST(InferencerTest, NestedClassInPolymorphicFunction2) {
         }
       }
     }
+
+    interface Animal {}
+    class Dog : Animal {}
+    class Cat : Animal {}
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_FALSE(inferencer.has_diagnostics());
 
-  ASSERT_GE(file_ast->declarations().size(), 2);
+  ASSERT_GE(file_ast->declarations().size(), 6);
   ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
   auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
   auto& main_statements = main_decl->func()->body()->statements();
   ASSERT_GE(main_statements.size(), 3);
+
+  auto let_stmt1 = main_statements[0]->As<LetStatement>();
+  auto let_expr1 = let_stmt1->expr();
 
   auto let_stmt2 = main_statements[1]->As<LetStatement>();
   auto let_expr2 = let_stmt2->expr();
@@ -2366,12 +2296,159 @@ TEST(InferencerTest, NestedClassInPolymorphicFunction2) {
   auto let_stmt3 = main_statements[2]->As<LetStatement>();
   auto let_expr3 = let_stmt3->expr();
 
+  auto animal_interface_decl = file_ast->declarations()[3]->As<InterfaceDeclaration>();
+  auto animal_type = animal_interface_decl->symbol()->type();
+  auto dog_class_decl = file_ast->declarations()[4]->As<ClassDeclaration>();
+  auto dog_type = dog_class_decl->symbol()->type();
+
   Substitution subst;
   TypeArena arena;
-  EXPECT_EQ(let_expr2->type()->Zonk(&subst, true, &arena), externals.dog_type());
-  EXPECT_EQ(let_expr3->type()->Zonk(&subst, true, &arena), externals.animal_type());
+  EXPECT_EQ(let_expr2->type()->Zonk(&subst, true, &arena), dog_type);
+  EXPECT_EQ(let_expr3->type()->Zonk(&subst, true, &arena), animal_type);
+
+  auto get_method_type = let_expr1->type()->Zonk(&subst, true, &arena)->As<NominalType>()->methods()[0]->type();
+
+  TypePrinter vtp({.verbose = true});
+  EXPECT_EQ(vtp(get_method_type),
+            "[A := bool] [B := Dog] Forall (C, D). C => D where "
+            "<Bottom> <: A <: bool, <Bottom> <: C <: D, (B | C) <: D <: <Top>");
+
+  TypePrinter stp;
+  EXPECT_EQ(stp(get_method_type), "A -> B where (Dog | A) <: B");
 }
-#endif
+
+
+TEST(InferencerTest, NestedClassInPolymorphicFunction3) {
+  auto source = R"(
+    def main() {
+      let inst = outer(new Dog{}, true)
+      let a = inst.get(new Dog{})
+      let b = inst.get(new Cat{})
+    }
+
+    def outer(ax, c) {
+      return middle(ax)
+
+      def middle(a) {
+        return new Inner{}
+
+        class Inner {
+          def get(b) => c ? a : b
+        }
+      }
+    }
+
+    interface Animal {}
+    class Dog : Animal {}
+    class Cat : Animal {}
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(inferencer.has_diagnostics());
+
+  ASSERT_GE(file_ast->declarations().size(), 5);
+  ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
+  auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
+  auto& main_statements = main_decl->func()->body()->statements();
+  ASSERT_GE(main_statements.size(), 3);
+
+  auto let_stmt1 = main_statements[0]->As<LetStatement>();
+  auto let_expr1 = let_stmt1->expr();
+
+  auto let_stmt2 = main_statements[1]->As<LetStatement>();
+  auto let_expr2 = let_stmt2->expr();
+
+  auto let_stmt3 = main_statements[2]->As<LetStatement>();
+  auto let_expr3 = let_stmt3->expr();
+
+  auto animal_interface_decl = file_ast->declarations()[2]->As<InterfaceDeclaration>();
+  auto animal_type = animal_interface_decl->symbol()->type();
+  auto dog_class_decl = file_ast->declarations()[3]->As<ClassDeclaration>();
+  auto dog_type = dog_class_decl->symbol()->type();
+
+  Substitution subst;
+  TypeArena arena;
+  EXPECT_EQ(let_expr2->type()->Zonk(&subst, true, &arena), dog_type);
+  EXPECT_EQ(let_expr3->type()->Zonk(&subst, true, &arena), animal_type);
+
+  auto get_method_type = let_expr1->type()->Zonk(&subst, true, &arena)->As<NominalType>()->methods()[0]->type();
+
+  TypePrinter vtp({.verbose = true});
+  EXPECT_EQ(
+      vtp(get_method_type),
+      "[A := B', C := D'] [E := C] Forall (F, G). F => G where "
+      "<Bottom> <: A <: bool, bool <: B' <: bool, Dog <: D' <: Animal, <Bottom> <: F <: G, (E | F) <: G <: <Top>");
+
+  TypePrinter stp;
+  EXPECT_EQ(stp(get_method_type), "A -> B where (C | A) <: B, Dog <: C <: Animal");
+}
+
+
+TEST(InferencerTest, NestedClassInPolymorphicFunction4) {
+  auto source = R"(
+    def main() {
+      let inst = outer(new Dog{}, new Cat{})
+      let a = inst.get()
+    }
+
+    def outer(a, b) {
+      return middle(true ? a : b)
+
+      def middle(x) {
+        return new Inner{}
+
+        class Inner {
+          def get() => x
+        }
+      }
+    }
+
+    interface Animal {}
+    class Dog : Animal {}
+    class Cat : Animal {}
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(inferencer.has_diagnostics());
+
+  ASSERT_GE(file_ast->declarations().size(), 5);
+  ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
+  auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
+  auto& main_statements = main_decl->func()->body()->statements();
+  ASSERT_GE(main_statements.size(), 2);
+
+  auto let_stmt1 = main_statements[0]->As<LetStatement>();
+  auto let_expr1 = let_stmt1->expr();
+
+  auto let_stmt2 = main_statements[1]->As<LetStatement>();
+  auto let_expr2 = let_stmt2->expr();
+
+  auto animal_interface_decl = file_ast->declarations()[2]->As<InterfaceDeclaration>();
+  auto animal_type = animal_interface_decl->symbol()->type();
+
+  Substitution subst;
+  TypeArena arena;
+  EXPECT_EQ(let_expr2->type()->Zonk(&subst, true, &arena), animal_type);
+
+  auto get_method_type = let_expr1->type()->Zonk(&subst, true, &arena)->As<NominalType>()->methods()[0]->type();
+
+  TypePrinter vtp({.verbose = true});
+  EXPECT_EQ(vtp(get_method_type),
+            "() => A' where (B' | C' | Dog | Cat | D') <: A' <: (Animal & D'), "
+            "Dog <: B' <: (A' & Animal), Cat <: C' <: (A' & Animal), "
+            "(Dog | Cat | A') <: D' <: (Animal & A' & E'), (Dog | Cat | D') <: E' <: Animal");
+
+  TypePrinter stp;
+  EXPECT_EQ(stp(get_method_type), "() -> A where (B | C) <: A <: Animal, Dog <: B, Cat <: C");
+}
 
 
 TEST(InferencerTest, Embedding_Basic) {
@@ -2397,8 +2474,7 @@ TEST(InferencerTest, Embedding_Basic) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2449,8 +2525,7 @@ TEST(InferencerTest, Embedding_AmbiguousField) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2479,16 +2554,46 @@ TEST(InferencerTest, Embedding_Cyclic) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 2);
+
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "cyclic embedding detected");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 13);
+
+  EXPECT_EQ(inferencer.diagnostics()[1].message, "missing field 'B'");
+  EXPECT_EQ(inferencer.diagnostics()[1].position.start.line, 10);
+  EXPECT_EQ(inferencer.diagnostics()[1].position.start.column, 19);
+}
+
+
+TEST(InferencerTest, Embedding_MissingInitializer) {
+  auto source = R"(
+    def main() {
+      let foo = new Foo{}
+    }
+
+    class Foo {
+      embed Bar
+    }
+    class Bar {
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_TRUE(inferencer.has_diagnostics());
   EXPECT_EQ(inferencer.diagnostics().size(), 1);
-  EXPECT_EQ(inferencer.diagnostics()[0].message, "cyclic embedding detected");
-  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
-  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 13);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "missing field 'Bar'");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 21);
 }
 
 
@@ -2518,8 +2623,7 @@ TEST(InferencerTest, Interface_Basic) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2556,8 +2660,7 @@ TEST(InferencerTest, Interface_MissingTypeAnnotation) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2581,8 +2684,7 @@ TEST(InferencerTest, Interface_MissingImplementation) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2607,8 +2709,7 @@ TEST(InferencerTest, Interface_IncompleteTypeAnnotation) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2634,8 +2735,7 @@ TEST(InferencerTest, Interface_IncompatibleImplementation) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());
@@ -2659,8 +2759,7 @@ TEST(InferencerTest, Interface_Cyclic) {
   )";
 
   XyloContext context;
-  Externals externals(&context);
-  auto file_ast = GetResolvedAST(&context, &externals, source);
+  auto file_ast = GetResolvedAST(&context, source);
 
   Inferencer inferencer(&context);
   inferencer.VisitFileAST(file_ast.get());

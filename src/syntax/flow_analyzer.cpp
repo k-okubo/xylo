@@ -1,8 +1,6 @@
 
 #include "xylo/syntax/flow_analyzer.h"
 
-#include "xylo/syntax/substitution.h"
-
 namespace xylo {
 
 

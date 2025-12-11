@@ -4,7 +4,6 @@
 #include <gtest/gtest.h>
 
 #include "xylo/syntax/context.h"
-#include "xylo/syntax/substitution.h"
 
 namespace xylo {
 
@@ -1128,6 +1127,8 @@ TEST(TypeTest, FunctionVariable_LambdaShape_Sibling) {
   delete foo_param2;
   delete func_foo_to_baz;
   delete foo_param3;
+  delete foo_param4;
+  delete func_foo_to_base1;
   delete func_foo_to_base2;
   delete metavar1;
   delete metavar2;
@@ -1287,6 +1288,8 @@ TEST(TypeTest, FunctionVariable_RetSibling) {
   delete metavar2;
   delete foo_param2;
   delete func_foo_to_metavar2;
+  delete foo_param3;
+  delete func_foo_to_base1;
   delete middle_metavar;
 }
 

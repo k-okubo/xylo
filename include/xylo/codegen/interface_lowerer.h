@@ -25,7 +25,7 @@ class InterfaceLowerer : public DeclarationLowerer {
   void set_interface_name(String&& name) { interface_name_ = std::move(name); }
 
   const String& mangled_name() const override { return interface_name_; }
-  int scope_depth() const override { xylo_unreachable(); }
+  Scope* scope() const override { return interface_decl_->inner_scope(); }
   llvm::StructType* scope_data_type() const override { xylo_unreachable(); }
 
   llvm::StructType* GetOrCreateVTableStruct();

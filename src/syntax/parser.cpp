@@ -140,7 +140,7 @@ static constexpr auto kExpressionEndTokens = {Token::kSemicolon, Token::kNewline
 
 FileASTPtr Parser::ParseFile() {
   auto file_ast = FileAST::Create();
-  file_ast->set_scope(context_->root_scope()->CreateChild());
+  file_ast->set_scope(context_->root_scope());
 
   while (PeekAhead() != Token::kEOF) {
     switch (PeekAhead()) {
@@ -192,7 +192,7 @@ DeclarationPtr Parser::ParseInterfaceDeclaration(Scope* scope) {
   while (PeekAhead() != Token::kRBrace && PeekAhead() != Token::kEOF) {
     switch (PeekAhead()) {
       case Token::kDef:
-        interface->add_method(ParseFunctionDeclaration(inner_scope.get(), false));
+        interface->add_method(ParseFunctionDeclaration(inner_scope, false));
         break;
 
       default:
@@ -202,7 +202,7 @@ DeclarationPtr Parser::ParseInterfaceDeclaration(Scope* scope) {
     }
   }
 
-  interface->set_scope(std::move(inner_scope));
+  interface->set_inner_scope(inner_scope);
   Expect(Token::kRBrace);
   ExpectEndOfStatement();
   return interface;
@@ -235,26 +235,24 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
   while (PeekAhead() != Token::kRBrace && PeekAhead() != Token::kEOF) {
     switch (PeekAhead()) {
       case Token::kIdentifier: {
-        clazz->add_field(ParseClassField(inner_scope.get()));
+        clazz->add_field(ParseClassField(inner_scope));
         break;
       }
 
       case Token::kEmbed:
-        clazz->add_embedding(ParseEmbeddingClass(inner_scope.get()));
+        clazz->add_embedded(ParseEmbeddedClass(inner_scope));
         break;
 
       case Token::kInterface:
-        ReportError(PeekTokenPosition(), "unsupported interface declaration inside class");
-        clazz->add_declaration(ParseInterfaceDeclaration(inner_scope.get()));
+        clazz->add_declaration(ParseInterfaceDeclaration(inner_scope));
         break;
 
       case Token::kClass:
-        ReportError(PeekTokenPosition(), "unsupported class declaration inside class");
-        clazz->add_declaration(ParseClassDeclaration(inner_scope.get()));
+        clazz->add_declaration(ParseClassDeclaration(inner_scope));
         break;
 
       case Token::kDef:
-        clazz->add_declaration(ParseFunctionDeclaration(inner_scope.get()));
+        clazz->add_declaration(ParseFunctionDeclaration(inner_scope));
         break;
 
       default:
@@ -264,7 +262,7 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
     }
   }
 
-  clazz->set_scope(std::move(inner_scope));
+  clazz->set_inner_scope(inner_scope);
   Expect(Token::kRBrace);
   ExpectEndOfStatement();
   return clazz;
@@ -289,16 +287,16 @@ ClassFieldPtr Parser::ParseClassField(Scope* scope) {
 }
 
 
-EmbeddingClassPtr Parser::ParseEmbeddingClass(Scope* scope) {
+EmbeddedClassPtr Parser::ParseEmbeddedClass(Scope* scope) {
   Expect(Token::kEmbed);
   Expect(Token::kIdentifier);
   auto embed_name = LastTokenValue().as_identifier;
   auto& embed_ident_pos = LastTokenPosition();
-  auto embedding_class = EmbeddingClass::Create(embed_name);
-  embedding_class->set_position(embed_ident_pos);
+  auto embedded_class = EmbeddedClass::Create(embed_name);
+  embedded_class->set_position(embed_ident_pos);
 
   ExpectEndOfStatement();
-  return embedding_class;
+  return embedded_class;
 }
 
 
@@ -359,7 +357,7 @@ FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope, bool needs_bod
   }
 
   auto func_position = LastTokenPosition();
-  auto func_scope = scope->CreateChild();
+  auto inner_scope = scope->CreateChild();
 
   // parse parameters
   Vector<FunctionParamPtr> params;
@@ -373,7 +371,7 @@ FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope, bool needs_bod
     if (Expect(Token::kIdentifier)) {
       auto param_name = LastTokenValue().as_identifier;
       auto& ident_pos = LastTokenPosition();
-      auto symbol = Symbol::Create(Symbol::Kind::kLetVariable, func_scope.get(), param_name, ident_pos);
+      auto symbol = Symbol::Create(Symbol::Kind::kLetVariable, inner_scope, param_name, ident_pos);
       auto param = FunctionParam::Create(std::move(symbol));
 
       if (TryConsume(Token::kColon)) {
@@ -400,7 +398,7 @@ FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope, bool needs_bod
       if (return_type_repr) {
         ErrorExpected(Token::kLBrace, Token::kDoubleArrow);
       }
-      auto body_func = ParseLambdaExpression(func_scope.get(), needs_body);
+      auto body_func = ParseLambdaExpression(inner_scope, needs_body);
       auto body_stmt = ReturnStatement::Create(std::move(body_func));
       auto body_block = Block::Create();
       body_block->add_statement(std::move(body_stmt));
@@ -410,7 +408,7 @@ FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope, bool needs_bod
 
     case Token::kDoubleArrow: {
       Consume();
-      auto body_expr = ParseExpression(func_scope.get());
+      auto body_expr = ParseExpression(inner_scope);
       auto body_stmt = ReturnStatement::Create(std::move(body_expr));
       auto body_block = Block::Create();
       body_block->add_statement(std::move(body_stmt));
@@ -419,7 +417,7 @@ FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope, bool needs_bod
     }
 
     case Token::kLBrace: {
-      auto body = ParseBlock(func_scope.get());
+      auto body = ParseBlock(inner_scope);
       func_expr = FunctionExpression::Create(std::move(params), std::move(body));
       break;
     }
@@ -435,7 +433,7 @@ FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope, bool needs_bod
       }
   }
 
-  func_expr->set_scope(std::move(func_scope));
+  func_expr->set_inner_scope(inner_scope);
   func_expr->set_return_type_repr(std::move(return_type_repr));
   func_expr->set_position(func_position);
 
@@ -454,12 +452,10 @@ BlockPtr Parser::ParseBlock(Scope* scope) {
   while (PeekAhead() != Token::kRBrace && PeekAhead() != Token::kEOF) {
     switch (PeekAhead()) {
       case Token::kInterface:
-        ReportError(PeekTokenPosition(), "unsupported interface declaration inside block");
         block->add_declaration(ParseInterfaceDeclaration(scope));
         break;
 
       case Token::kClass:
-        ReportError(PeekTokenPosition(), "unsupported class declaration inside block");
         block->add_declaration(ParseClassDeclaration(scope));
         break;
 

@@ -6,7 +6,6 @@ add_library(xylo_syntax STATIC
   location.cpp
   parser.cpp
   resolver.cpp
-  substitution.cpp
   token.cpp
   type.cpp
 )

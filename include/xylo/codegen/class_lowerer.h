@@ -29,7 +29,7 @@ class ClassLowerer : public DeclarationLowerer {
   void set_class_name(String&& name) { class_name_ = std::move(name); }
 
   const String& mangled_name() const override { return class_name_; }
-  int scope_depth() const override { return xylo_class()->scope()->depth(); }
+  Scope* scope() const override { return xylo_class()->inner_scope(); }
   llvm::StructType* scope_data_type() const override { return instance_struct_; }
 
   llvm::StructType* GetOrCreateInstanceStruct();

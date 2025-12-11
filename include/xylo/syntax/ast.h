@@ -7,6 +7,7 @@
 
 #include "xylo/syntax/identifier.h"
 #include "xylo/syntax/location.h"
+#include "xylo/syntax/scope.h"
 #include "xylo/syntax/token.h"
 #include "xylo/syntax/type.h"
 #include "xylo/util/downcastable.h"
@@ -14,7 +15,6 @@
 
 namespace xylo {
 
-class Scope;
 class Symbol;
 class FileAST;
 class Declaration;
@@ -29,14 +29,13 @@ class FunctionExpression;
 class TupleTypeRepr;
 
 class ClassField;
-class EmbeddingClass;
+class EmbeddedClass;
 class SuperClass;
 class FunctionParam;
 class Initializer;
 class ObjectInitializer;
 class FieldEntry;
 
-using ScopePtr = std::unique_ptr<Scope>;
 using SymbolPtr = std::unique_ptr<Symbol>;
 using FileASTPtr = std::unique_ptr<FileAST>;
 using DeclarationPtr = std::unique_ptr<Declaration>;
@@ -51,49 +50,12 @@ using FunctionExpressionPtr = std::unique_ptr<FunctionExpression>;
 using TupleTypeReprPtr = std::unique_ptr<TupleTypeRepr>;
 
 using ClassFieldPtr = std::unique_ptr<ClassField>;
-using EmbeddingClassPtr = std::unique_ptr<EmbeddingClass>;
+using EmbeddedClassPtr = std::unique_ptr<EmbeddedClass>;
 using SuperClassPtr = std::unique_ptr<SuperClass>;
 using FunctionParamPtr = std::unique_ptr<FunctionParam>;
 using InitializerPtr = std::unique_ptr<Initializer>;
 using ObjectInitializerPtr = std::unique_ptr<ObjectInitializer>;
 using FieldEntryPtr = std::unique_ptr<FieldEntry>;
-
-
-class Scope {
- public:
-  static auto CreateRoot() {
-    auto p = new Scope();
-    return std::unique_ptr<Scope>(p);
-  }
-
-  static auto Create(const Scope* parent) {
-    auto p = new Scope(parent);
-    return std::unique_ptr<Scope>(p);
-  }
-
-  Scope() :
-      parent_(nullptr),
-      depth_(0) {}
-
-  explicit Scope(const Scope* parent) :
-      parent_(parent),
-      depth_(parent->depth() + 1) {}
-
-  ~Scope() = default;
-
-  Scope(const Scope&) = delete;
-  Scope& operator=(const Scope&) = delete;
-
-  auto CreateChild() const { return Scope::Create(this); }
-
-  const Scope* parent() const { return parent_; }
-
-  int depth() const { return depth_; }
-
- private:
-  const Scope* parent_;
-  int depth_;
-};
 
 
 class Symbol {
@@ -176,8 +138,8 @@ class FileAST {
   FileAST(const FileAST&) = delete;
   FileAST& operator=(const FileAST&) = delete;
 
-  Scope* scope() const { return scope_.get(); }
-  void set_scope(ScopePtr&& scope) { scope_ = std::move(scope); }
+  Scope* scope() const { return scope_; }
+  void set_scope(Scope* scope) { scope_ = scope; }
 
   const Vector<DeclarationPtr>& declarations() const { return declarations_; }
   void add_declaration(DeclarationPtr&& decl) { declarations_.push_back(std::move(decl)); }
@@ -186,7 +148,7 @@ class FileAST {
   void set_entry_point(FunctionDeclaration* decl) { entry_point_ = decl; }
 
  private:
-  ScopePtr scope_;
+  Scope* scope_;
   Vector<DeclarationPtr> declarations_;
   FunctionDeclaration* entry_point_;
 };
@@ -230,13 +192,13 @@ class InterfaceDeclaration : public Declaration {
  protected:
   explicit InterfaceDeclaration(SymbolPtr&& symbol) :
       Declaration(Kind::kInterface, std::move(symbol)),
-      scope_(nullptr),
+      inner_scope_(nullptr),
       methods_(),
       supers_() {}
 
  public:
-  Scope* scope() const { return scope_.get(); }
-  void set_scope(ScopePtr&& scope) { scope_ = std::move(scope); }
+  Scope* inner_scope() const { return inner_scope_; }
+  void set_inner_scope(Scope* inner_scope) { inner_scope_ = inner_scope; }
 
   const Vector<FunctionDeclarationPtr>& methods() const { return methods_; }
   void add_method(FunctionDeclarationPtr&& method) { methods_.push_back(std::move(method)); }
@@ -245,7 +207,7 @@ class InterfaceDeclaration : public Declaration {
   void set_supers(Vector<SuperClassPtr>&& supers) { supers_ = std::move(supers); }
 
  private:
-  ScopePtr scope_;
+  Scope* inner_scope_;
   Vector<FunctionDeclarationPtr> methods_;
   Vector<SuperClassPtr> supers_;
 };
@@ -261,15 +223,16 @@ class ClassDeclaration : public Declaration {
  protected:
   explicit ClassDeclaration(SymbolPtr&& symbol) :
       Declaration(Kind::kClass, std::move(symbol)),
-      scope_(nullptr),
+      inner_scope_(nullptr),
       fields_(),
       declarations_(),
-      embeddings_(),
-      supers_() {}
+      embeddeds_(),
+      supers_(),
+      closure_(false) {}
 
  public:
-  Scope* scope() const { return scope_.get(); }
-  void set_scope(ScopePtr&& scope) { scope_ = std::move(scope); }
+  Scope* inner_scope() const { return inner_scope_; }
+  void set_inner_scope(Scope* inner_scope) { inner_scope_ = inner_scope; }
 
   const Vector<ClassFieldPtr>& fields() const { return fields_; }
   void add_field(ClassFieldPtr&& field) { fields_.push_back(std::move(field)); }
@@ -277,18 +240,22 @@ class ClassDeclaration : public Declaration {
   const Vector<DeclarationPtr>& declarations() const { return declarations_; }
   void add_declaration(DeclarationPtr&& decl) { declarations_.push_back(std::move(decl)); }
 
-  const Vector<EmbeddingClassPtr>& embeddings() const { return embeddings_; }
-  void add_embedding(EmbeddingClassPtr&& embedding) { embeddings_.push_back(std::move(embedding)); }
+  const Vector<EmbeddedClassPtr>& embeddeds() const { return embeddeds_; }
+  void add_embedded(EmbeddedClassPtr&& embedded) { embeddeds_.push_back(std::move(embedded)); }
 
   const Vector<SuperClassPtr>& supers() const { return supers_; }
   void set_supers(Vector<SuperClassPtr>&& supers) { supers_ = std::move(supers); }
 
+  bool is_closure() const { return closure_; }
+  void set_closure(bool closure) { closure_ = closure; }
+
  private:
-  ScopePtr scope_;
+  Scope* inner_scope_;
   Vector<ClassFieldPtr> fields_;
   Vector<DeclarationPtr> declarations_;
-  Vector<EmbeddingClassPtr> embeddings_;
+  Vector<EmbeddedClassPtr> embeddeds_;
   Vector<SuperClassPtr> supers_;
+  bool closure_;
 };
 
 
@@ -316,15 +283,15 @@ class ClassField {
 };
 
 
-class EmbeddingClass {
+class EmbeddedClass {
  public:
   static auto Create(Identifier* name) {
-    auto p = new EmbeddingClass(name);
-    return std::unique_ptr<EmbeddingClass>(p);
+    auto p = new EmbeddedClass(name);
+    return std::unique_ptr<EmbeddedClass>(p);
   }
 
  protected:
-  explicit EmbeddingClass(Identifier* name) :
+  explicit EmbeddedClass(Identifier* name) :
       name_(name),
       position_(),
       symbol_(nullptr) {}
@@ -768,7 +735,7 @@ class FunctionExpression : public Expression {
       Expression(Kind::kFunction),
       params_(std::move(params)),
       body_(std::move(body)),
-      scope_(nullptr),
+      inner_scope_(nullptr),
       return_type_repr_(nullptr),
       closure_(false),
       has_closure_(false),
@@ -778,8 +745,8 @@ class FunctionExpression : public Expression {
   const Vector<FunctionParamPtr>& params() const { return params_; }
   Block* body() const { return body_.get(); }
 
-  Scope* scope() const { return scope_.get(); }
-  void set_scope(ScopePtr&& scope) { scope_ = std::move(scope); }
+  Scope* inner_scope() const { return inner_scope_; }
+  void set_inner_scope(Scope* inner_scope) { inner_scope_ = inner_scope; }
 
   TypeRepr* return_type_repr() const { return return_type_repr_.get(); }
   void set_return_type_repr(TypeReprPtr&& type_repr) { return_type_repr_ = std::move(type_repr); }
@@ -796,7 +763,7 @@ class FunctionExpression : public Expression {
  private:
   Vector<FunctionParamPtr> params_;
   BlockPtr body_;
-  ScopePtr scope_;
+  Scope* inner_scope_;
   TypeReprPtr return_type_repr_;
   bool closure_;
   bool has_closure_;

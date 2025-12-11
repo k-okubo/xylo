@@ -34,7 +34,7 @@ class Parser : public DiagnosticReporter {
   DeclarationPtr ParseInterfaceDeclaration(Scope* scope);
   DeclarationPtr ParseClassDeclaration(Scope* scope);
   ClassFieldPtr ParseClassField(Scope* scope);
-  EmbeddingClassPtr ParseEmbeddingClass(Scope* scope);
+  EmbeddedClassPtr ParseEmbeddedClass(Scope* scope);
   Vector<SuperClassPtr> ParseSuperClasses(Scope* scope);
 
   FunctionDeclarationPtr ParseFunctionDeclaration(Scope* scope, bool needs_body = true);

@@ -18,9 +18,7 @@ class ProgramLowerer : public LoweringNode {
       llvm_module_(llvm_module),
       closure_object_type_(nullptr),
       interface_fatptr_type_(nullptr),
-      xylo_malloc_(nullptr),
-      interface_lowerers_(),
-      class_lowerers_() {}
+      xylo_malloc_(nullptr) {}
 
   ~ProgramLowerer() = default;
 
@@ -38,17 +36,11 @@ class ProgramLowerer : public LoweringNode {
     return name;
   }
 
-  int scope_depth() const override { return 1; }
+  Scope* scope() const override { return xylo_context()->root_scope(); }
   llvm::StructType* scope_data_type() const override { return nullptr; }
 
   void RegisterTopLevelDecls(FileAST* file_ast);
   void BuildEntryPoint(const llvm::Twine& name, Symbol* main_symbol, const Vector<Type*>& main_type_args);
-
-  void RegisterInterfaceLowerer(NominalType* type, InterfaceLowerer* lowerer);
-  InterfaceLowerer* GetInterfaceLowerer(NominalType* type);
-
-  void RegisterClassLowerer(NominalType* type, ClassLowerer* lowerer);
-  ClassLowerer* GetClassLowerer(NominalType* type);
 
  private:
   XyloContext* xylo_context_;
@@ -57,9 +49,6 @@ class ProgramLowerer : public LoweringNode {
   llvm::StructType* closure_object_type_;
   llvm::StructType* interface_fatptr_type_;
   llvm::Function* xylo_malloc_;
-
-  Map<NominalType*, InterfaceLowerer*> interface_lowerers_;
-  Map<NominalType*, ClassLowerer*> class_lowerers_;
 };
 
 

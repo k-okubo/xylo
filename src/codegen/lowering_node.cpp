@@ -10,29 +10,6 @@
 namespace xylo {
 
 
-HString LoweringNode::TypeArgsKey(const TypeVec& type_args) const {
-  Mangler mangler(root()->xylo_context());
-  return mangler.TypeArgsKey(type_args);
-}
-
-
-static String ChildMangledName(LoweringNode* parent, Symbol* symbol, const HString& type_args_key) {
-  String mangled;
-
-  mangled += parent->mangled_name();
-  mangled += "__";
-  mangled += std::to_string(symbol->name()->str().size());
-  mangled += symbol->name()->str();
-
-  if (type_args_key.size() > 1) {
-    mangled += "_";
-    mangled += type_args_key;
-  }
-
-  return mangled;
-}
-
-
 void LoweringNode::RegisterDeclaration(Declaration* decl) {
   switch (decl->kind()) {
     case Declaration::Kind::kInterface:
@@ -85,6 +62,48 @@ void LoweringNode::RegisterScopeRoute(Scope* scope, LoweringNode* route) {
   if (parent_ != nullptr) {
     parent_->RegisterScopeRoute(scope, this);
   }
+}
+
+
+HString LoweringNode::TypeArgsKey(const TypeVec& type_args) const {
+  Mangler mangler(root()->xylo_context());
+  return mangler.TypeArgsKey(type_args);
+}
+
+
+static String ChildMangledName(LoweringNode* parent, Symbol* symbol, const HString& type_args_key) {
+  String mangled;
+
+  mangled += parent->mangled_name();
+  mangled += "__";
+  mangled += std::to_string(symbol->name()->str().size());
+  mangled += symbol->name()->str();
+
+  if (type_args_key.size() > 1) {
+    mangled += "_";
+    mangled += type_args_key;
+  }
+
+  return mangled;
+}
+
+
+SubstitutionPtr LoweringNode::ExtendSubstitution(Type* callee, const TypeVec& type_args) {
+  auto ext_subst = std::make_unique<Substitution>(this->subst());
+
+  if (callee->kind() == Type::Kind::kScheme) {
+    auto type_scheme = callee->As<TypeScheme>();
+    xylo_contract(type_args.size() == type_scheme->vars().size());
+
+    for (size_t i = 0; i < type_scheme->vars().size(); ++i) {
+      xylo_check(ext_subst->Insert(type_scheme->vars()[i], type_args[i]));
+    }
+
+  } else {
+    xylo_contract(type_args.size() == 0);
+  }
+
+  return ext_subst;
 }
 
 
@@ -169,8 +188,34 @@ llvm::StructType* LoweringNode::GetOrCreateInstanceStruct(Symbol* symbol) {
 }
 
 
+llvm::Function* LoweringNode::GetOrBuildMethod(NominalType* type, Identifier* name, const MetavarVec& type_args) {
+  TypeArena arena;
+  TypeVec concrete_type_args;
+
+  for (auto metavar : type_args) {
+    auto type = metavar->Zonk(subst(), false, &arena);
+    concrete_type_args.push_back(type);
+  }
+
+  return GetOrBuildMethod(type, name, concrete_type_args);
+}
+
+
 llvm::Function* LoweringNode::GetOrBuildMethod(NominalType* type, Identifier* name, const TypeVec& type_args) {
   return GetClassLowerer(type, subst())->GetOrBuildMethod(name, type_args);
+}
+
+
+llvm::Function* LoweringNode::GetOrBuildFunction(Symbol* symbol, const MetavarVec& type_args) {
+  TypeArena arena;
+  TypeVec concrete_type_args;
+
+  for (auto metavar : type_args) {
+    auto type = metavar->Zonk(subst(), false, &arena);
+    concrete_type_args.push_back(type);
+  }
+
+  return GetOrBuildFunction(symbol, concrete_type_args);
 }
 
 
@@ -204,25 +249,6 @@ llvm::Function* LoweringNode::GetOrBuildFunction(Symbol* symbol, const TypeVec& 
   // build function
   auto func_lowerer = sfunc_it->second;
   return func_lowerer->GetOrBuildFunction();
-}
-
-
-SubstitutionPtr LoweringNode::ExtendSubstitution(Type* callee, const TypeVec& type_args) {
-  auto ext_subst = std::make_unique<Substitution>(this->subst());
-
-  if (callee->kind() == Type::Kind::kScheme) {
-    auto type_scheme = callee->As<TypeScheme>();
-    xylo_contract(type_args.size() == type_scheme->vars().size());
-
-    for (size_t i = 0; i < type_scheme->vars().size(); ++i) {
-      xylo_check(ext_subst->Insert(type_scheme->vars()[i], type_args[i]));
-    }
-
-  } else {
-    xylo_contract(type_args.size() == 0);
-  }
-
-  return ext_subst;
 }
 
 

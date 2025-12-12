@@ -74,7 +74,6 @@ class FunctionLowerer : public DeclarationLowerer {
  protected:
   llvm::Type* ZonkAndConvert(xylo::Type* type, bool function_as_pointer);
   llvm::Value* ZonkAndAdjustType(llvm::Value* value, xylo::Type* from_type, xylo::Type* to_type);
-  llvm::Value* AdjustType(llvm::Value* value, xylo::Type* zonked_from_type, xylo::Type* zonked_to_type);
 
   llvm::Value* outer_env_ptr() const { return outer_env_ptr_; }
   void set_outer_env_ptr(llvm::Value* ptr) { outer_env_ptr_ = ptr; }
@@ -85,23 +84,12 @@ class FunctionLowerer : public DeclarationLowerer {
   llvm::StructType* inner_env_type() const { return inner_env_type_; }
   void set_inner_env_type(llvm::StructType* type) { inner_env_type_ = type; }
 
-  llvm::Value* null_ptr() const { return llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(llvm_context())); }
-
-  llvm::Value* BuildHeapAlloc(llvm::Type* type);
   llvm::Value* StoreCapturedValue(Symbol* symbol, llvm::Value* value);
   llvm::Value* StoreToInnerEnv(int index, llvm::Value* value);
 
   llvm::Value* LoadThisPointer();
   std::pair<llvm::Value*, llvm::StructType*> LoadOuterEnvironmentPtr(Symbol* symbol);
   std::pair<llvm::Value*, llvm::Type*> LoadOuterEnvironmentValuePtr(Symbol* symbol);
-
-  llvm::Value* BuildClosureObject(llvm::Value* func_ptr, llvm::Value* env_ptr);
-  llvm::Value* LoadFunctionPtrFromClosureObject(llvm::Value* closure_obj);
-  llvm::Value* LoadEnvironmentPtrFromClosureObject(llvm::Value* closure_obj);
-
-  llvm::Value* BuildInterfaceFatptr(llvm::Value* obj_ptr, llvm::Value* vtable_ptr);
-  llvm::Value* LoadObjectPtrFromInterfaceFatptr(llvm::Value* fatptr);
-  llvm::Value* LoadVTablePtrFromInterfaceFatptr(llvm::Value* fatptr);
 
  private:
   FunctionExpression* xylo_func_;

@@ -78,7 +78,8 @@ void FunctionLowerer::BuildInnerEnv() {
   set_inner_env_type(type);
 
   // allocate inner environment
-  auto ptr = BuildHeapAlloc(inner_env_type());
+  BuildingUtil bu(this, &builder_);
+  auto ptr = bu.CreateHeapAlloc(inner_env_type());
   set_inner_env_ptr(ptr);
 }
 
@@ -330,14 +331,7 @@ llvm::Value* FunctionLowerer::BuildLocalValueIdentifier(IdentifierExpression* ex
 
 llvm::Value* FunctionLowerer::BuildFunctionIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env) {
   auto symbol = expr->symbol();
-
-  TypeVec type_args;
-  TypeArena arena;
-
-  for (auto var : expr->instantiated_vars()) {
-    type_args.push_back(var->Zonk(subst(), false, &arena));
-  }
-  auto llvm_func = LoweringNode::GetOrBuildFunction(symbol, type_args);
+  auto llvm_func = LoweringNode::GetOrBuildFunction(symbol, expr->instantiated_vars());
   auto xylo_func = GetXyloFunction(symbol);
 
   if (xylo_func->is_closure()) {
@@ -349,7 +343,8 @@ llvm::Value* FunctionLowerer::BuildFunctionIdentifier(IdentifierExpression* expr
       return llvm_func;
     } else {
       // return closure object
-      return BuildClosureObject(llvm_func, env_ptr);
+      BuildingUtil bu(this, &builder_);
+      return bu.CreateClosureObject(llvm_func, env_ptr);
     }
 
   } else {
@@ -370,7 +365,8 @@ llvm::Value* FunctionLowerer::BuildFunctionExpression(FunctionExpression* expr) 
   auto llvm_func = nested_lowerer->GetOrBuildFunction();
 
   if (expr->is_closure()) {
-    return BuildClosureObject(llvm_func, inner_env_ptr());
+    BuildingUtil bu(this, &builder_);
+    return bu.CreateClosureObject(llvm_func, inner_env_ptr());
   } else {
     return llvm_func;
   }
@@ -378,6 +374,7 @@ llvm::Value* FunctionLowerer::BuildFunctionExpression(FunctionExpression* expr) 
 
 
 llvm::Value* FunctionLowerer::BuildApplyExpression(ApplyExpression* expr) {
+  BuildingUtil bu(this, &builder_);
   llvm::Value* closure_env_ptr = nullptr;
 
   TypeArena arena;
@@ -392,7 +389,7 @@ llvm::Value* FunctionLowerer::BuildApplyExpression(ApplyExpression* expr) {
     auto param_type = xylo_func_type->params_type()->elements()[i];
 
     auto arg_value = BuildExpression(arg_expr);
-    arg_value = AdjustType(arg_value, arg_type, param_type);
+    arg_value = bu.AdjustType(arg_value, arg_type, param_type);
     arg_values.push_back(arg_value);
   }
 
@@ -426,8 +423,8 @@ llvm::Value* FunctionLowerer::BuildApplyExpression(ApplyExpression* expr) {
   if (xylo_func_type->is_closure()) {
     // extract function and environment from closure
     auto closure_ptr = func_value;
-    auto func_ptr = LoadFunctionPtrFromClosureObject(closure_ptr);
-    auto env_ptr = LoadEnvironmentPtrFromClosureObject(closure_ptr);
+    auto func_ptr = bu.LoadFunctionPtrFromClosureObject(closure_ptr);
+    auto env_ptr = bu.LoadEnvironmentPtrFromClosureObject(closure_ptr);
     func_value = func_ptr;
     arg_values[0] = env_ptr;
 
@@ -730,9 +727,10 @@ llvm::Value* FunctionLowerer::BuildConditionalExpression(ConditionalExpression* 
 
     // adjust type if value is required in context
     if (merged_type != xylo_context()->unit_type()) {
+      BuildingUtil bu(this, &builder_);
       TypeArena arena;
       auto zonked_branch_type = type->Zonk(subst(), false, &arena);
-      value = AdjustType(value, zonked_branch_type, merged_type);
+      value = bu.AdjustType(value, zonked_branch_type, merged_type);
     }
 
     builder_.CreateBr(merge_bb);
@@ -777,7 +775,9 @@ llvm::Value* FunctionLowerer::BuildConditionalExpression(ConditionalExpression* 
 llvm::Value* FunctionLowerer::BuildConstructExpression(ConstructExpression* expr) {
   auto nominal_type = expr->type()->As<NominalType>();
   auto struct_type = GetOrCreateInstanceStruct(expr->class_symbol());
-  auto ptr = BuildHeapAlloc(struct_type);
+
+  BuildingUtil bu(this, &builder_);
+  auto ptr = bu.CreateHeapAlloc(struct_type);
 
   BuildObjectInitializer(expr->initializer(), nominal_type, ptr);
 
@@ -849,6 +849,8 @@ llvm::Value* FunctionLowerer::BuildSelectExpression(SelectExpression* expr, llvm
 
 llvm::Value* FunctionLowerer::BuildClassSelect(SelectExpression* expr, NominalType* object_type,
                                                llvm::Value** out_closure_env) {
+  BuildingUtil bu(this, &builder_);
+
   auto object_ptr = BuildExpression(expr->object());
   auto instance_struct = GetInstanceStruct(object_type);
 
@@ -856,8 +858,6 @@ llvm::Value* FunctionLowerer::BuildClassSelect(SelectExpression* expr, NominalTy
   object_type->GetMemberPath(expr->member_name(), &member_path);
   xylo_contract(!member_path.empty());
   auto member_info = member_path[0];
-
-  BuildingUtil bu(&builder_);
 
   switch (member_info->kind()) {
     case MemberInfo::Kind::kField: {
@@ -875,11 +875,7 @@ llvm::Value* FunctionLowerer::BuildClassSelect(SelectExpression* expr, NominalTy
       return bu.MemberPtr(instance_struct, object_ptr, member_path);
 
     case MemberInfo::Kind::kMethod: {
-      TypeArena arena;
-      TypeVec type_args;
-      for (auto var : expr->member_constraint()->instantiated_vars()) {
-        type_args.push_back(var->Zonk(subst(), false, &arena));
-      }
+      auto& type_args = expr->member_constraint()->instantiated_vars();
       auto llvm_func = GetOrBuildMethod(member_info->owner(), expr->member_name(), type_args);
 
       // load method's owner pointer
@@ -891,7 +887,7 @@ llvm::Value* FunctionLowerer::BuildClassSelect(SelectExpression* expr, NominalTy
         return llvm_func;
       } else {
         // return closure object
-        return BuildClosureObject(llvm_func, object_ptr);
+        return bu.CreateClosureObject(llvm_func, object_ptr);
       }
     }
 
@@ -905,6 +901,8 @@ llvm::Value* FunctionLowerer::BuildClassSelect(SelectExpression* expr, NominalTy
 
 llvm::Value* FunctionLowerer::BuildInterfaceSelect(SelectExpression* expr, NominalType* object_type,
                                                    llvm::Value** out_closure_env) {
+  BuildingUtil bu(this, &builder_);
+
   auto interface_ptr = BuildExpression(expr->object());
   auto vtable_struct = GetVTableStruct(object_type);
 
@@ -914,10 +912,9 @@ llvm::Value* FunctionLowerer::BuildInterfaceSelect(SelectExpression* expr, Nomin
   xylo_contract(member_path[0]->kind() == MemberInfo::Kind::kMethod);
 
   TypeConverter tc(xylo_context(), llvm_context());
-  auto object_ptr = LoadObjectPtrFromInterfaceFatptr(interface_ptr);
-  auto vtable_ptr = LoadVTablePtrFromInterfaceFatptr(interface_ptr);
+  auto object_ptr = bu.LoadObjectPtrFromInterfaceFatptr(interface_ptr);
+  auto vtable_ptr = bu.LoadVTablePtrFromInterfaceFatptr(interface_ptr);
 
-  BuildingUtil bu(&builder_);
   auto func_ptr_field = bu.MemberPtr(vtable_struct, vtable_ptr, member_path);
   auto func_ptr = builder_.CreateLoad(tc.PointerType(), func_ptr_field);
 
@@ -927,7 +924,7 @@ llvm::Value* FunctionLowerer::BuildInterfaceSelect(SelectExpression* expr, Nomin
     return func_ptr;
   } else {
     // return closure object
-    return BuildClosureObject(func_ptr, object_ptr);
+    return bu.CreateClosureObject(func_ptr, object_ptr);
   }
 }
 
@@ -938,12 +935,11 @@ llvm::Value* FunctionLowerer::BuildBlockExpression(BlockExpression* expr) {
 
 
 llvm::Type* FunctionLowerer::ZonkAndConvert(xylo::Type* type, bool function_as_pointer) {
-  TypeConverter type_converter(xylo_context(), llvm_context());
   TypeArena arena;
   auto zonked_type = type->Zonk(subst(), false, &arena);
-  auto llvm_type = type_converter.Convert(zonked_type, function_as_pointer);
 
-  return llvm_type;
+  TypeConverter type_converter(xylo_context(), llvm_context());
+  return type_converter.Convert(zonked_type, function_as_pointer);
 }
 
 
@@ -952,101 +948,8 @@ llvm::Value* FunctionLowerer::ZonkAndAdjustType(llvm::Value* value, xylo::Type* 
   auto zonked_from_type = from_type->Zonk(subst(), false, &arena);
   auto zonked_to_type = to_type->Zonk(subst(), false, &arena);
 
-  return AdjustType(value, zonked_from_type, zonked_to_type);
-}
-
-
-llvm::Value* FunctionLowerer::AdjustType(llvm::Value* value, xylo::Type* zonked_from_type, xylo::Type* zonked_to_type) {
-  if (zonked_from_type == zonked_to_type) {
-    return value;
-  }
-
-  if (zonked_from_type == xylo_context()->int_type() && zonked_to_type == xylo_context()->float_type()) {
-    return builder_.CreateSIToFP(value, llvm::Type::getDoubleTy(llvm_context()));
-  }
-
-  if (zonked_from_type->kind() == Type::Kind::kNominal && zonked_to_type->kind() == Type::Kind::kNominal) {
-    // upcast between nominal types
-    auto from_nominal = zonked_from_type->As<NominalType>();
-    auto to_nominal = zonked_to_type->As<NominalType>();
-
-    Vector<NominalSlot*> super_path;
-    xylo_check(from_nominal->GetSuperPath(to_nominal, &super_path));
-    xylo_contract(!super_path.empty());
-
-    llvm::Value* object_ptr;
-    llvm::Value* vtable_ptr;
-    llvm::StructType* vtable_struct;
-
-    if (from_nominal->category() == NominalType::Category::kClass) {
-      // from_nominal is a class; get vtable from global constant
-      auto class_lowerer = GetClassLowerer(from_nominal);
-      object_ptr = value;
-      vtable_ptr = class_lowerer->GetVTablePtr();
-      vtable_struct = class_lowerer->GetVTableStruct();
-
-    } else {
-      // from_nominal is an interface; load object and vtable pointers from `value`
-      xylo_contract(from_nominal->category() == NominalType::Category::kInterface);
-      object_ptr = LoadObjectPtrFromInterfaceFatptr(value);
-      vtable_ptr = LoadVTablePtrFromInterfaceFatptr(value);
-      vtable_struct = GetVTableStruct(from_nominal);
-    }
-
-    // build interface fat pointer with adjusted vtable
-    BuildingUtil bu(&builder_);
-    vtable_ptr = bu.MemberPtr(vtable_struct, vtable_ptr, super_path);
-    return BuildInterfaceFatptr(object_ptr, vtable_ptr);
-  }
-
-  if (zonked_from_type->kind() == Type::Kind::kFunction && zonked_to_type->kind() == Type::Kind::kFunction) {
-    auto from_func_type = zonked_from_type->As<FunctionType>();
-    auto to_func_type = zonked_to_type->As<FunctionType>();
-
-    if (from_func_type->params_type()->equals(to_func_type->params_type()) &&
-        from_func_type->return_type()->equals(to_func_type->return_type())) {
-      if (from_func_type->is_closure() == to_func_type->is_closure()) {
-        // same function type
-        return value;
-      } else {
-        // by type checking, regular function to closure function conversion
-        xylo_contract(!from_func_type->is_closure());
-        xylo_contract(to_func_type->is_closure());
-
-        return BuildClosureObject(value, null_ptr());
-      }
-    }
-
-    if (!zonked_to_type->IsGroundType()) {
-      // zonked_to_type contains an incomplete type like bottom, meaning this value will never be called
-      return value;
-    }
-  }
-
-#if 0  // enable later if needed
-  if (zonked_from_type->is_bottom_type()) {
-    TypeConverter converter(xylo_context(), llvm_context());
-    auto llvm_to_type = converter.Convert(zonked_to_type);
-    return llvm::UndefValue::get(llvm_to_type);
-  }
-#endif
-
-  if (zonked_to_type->is_top_type()) {
-    return value;
-  }
-
-  throw std::logic_error("unsupported type adjustment in FunctionLowerer::AdjustType");
-}
-
-
-llvm::Value* FunctionLowerer::BuildHeapAlloc(llvm::Type* type) {
-  auto alloc_size = llvm_module()->getDataLayout().getTypeAllocSize(type);
-  auto alloc_size_int = llvm::ConstantInt::get(size_type(), alloc_size);
-
-  auto malloc_func = xylo_malloc();
-  auto ptr = builder_.CreateCall(malloc_func, {alloc_size_int});
-
-  return ptr;
+  BuildingUtil bu(this, &builder_);
+  return bu.AdjustType(value, zonked_from_type, zonked_to_type);
 }
 
 
@@ -1121,61 +1024,6 @@ std::pair<llvm::Value*, llvm::Type*> FunctionLowerer::LoadOuterEnvironmentValueP
   auto index = symbol->captured_index() + 1;  // first index is for outer environment pointer
   auto value_ptr = builder_.CreateStructGEP(env_type, env_ptr, index);
   return {value_ptr, env_type->getElementType(index)};
-}
-
-
-llvm::Value* FunctionLowerer::BuildClosureObject(llvm::Value* func_ptr, llvm::Value* env_ptr) {
-  auto closure_ty = closure_object_type();
-  auto closure_obj = BuildHeapAlloc(closure_ty);
-
-  auto func_ptr_field = builder_.CreateStructGEP(closure_ty, closure_obj, 0);
-  builder_.CreateStore(func_ptr, func_ptr_field);
-
-  auto env_ptr_field = builder_.CreateStructGEP(closure_ty, closure_obj, 1);
-  builder_.CreateStore(env_ptr, env_ptr_field);
-
-  return closure_obj;
-}
-
-llvm::Value* FunctionLowerer::LoadFunctionPtrFromClosureObject(llvm::Value* closure_obj) {
-  auto closure_ty = closure_object_type();
-  auto func_ptr_field = builder_.CreateStructGEP(closure_ty, closure_obj, 0);
-  return builder_.CreateLoad(closure_ty->getElementType(0), func_ptr_field);
-}
-
-
-llvm::Value* FunctionLowerer::LoadEnvironmentPtrFromClosureObject(llvm::Value* closure_obj) {
-  auto closure_ty = closure_object_type();
-  auto env_ptr_field = builder_.CreateStructGEP(closure_ty, closure_obj, 1);
-  return builder_.CreateLoad(closure_ty->getElementType(1), env_ptr_field);
-}
-
-
-llvm::Value* FunctionLowerer::BuildInterfaceFatptr(llvm::Value* obj_ptr, llvm::Value* vtable_ptr) {
-  auto fatptr_ty = interface_fatptr_type();
-  auto fatptr = BuildHeapAlloc(fatptr_ty);
-
-  auto obj_ptr_field = builder_.CreateStructGEP(fatptr_ty, fatptr, 0);
-  builder_.CreateStore(obj_ptr, obj_ptr_field);
-
-  auto vtable_ptr_field = builder_.CreateStructGEP(fatptr_ty, fatptr, 1);
-  builder_.CreateStore(vtable_ptr, vtable_ptr_field);
-
-  return fatptr;
-}
-
-
-llvm::Value* FunctionLowerer::LoadObjectPtrFromInterfaceFatptr(llvm::Value* fatptr) {
-  auto fatptr_ty = interface_fatptr_type();
-  auto obj_ptr_field = builder_.CreateStructGEP(fatptr_ty, fatptr, 0);
-  return builder_.CreateLoad(fatptr_ty->getElementType(0), obj_ptr_field);
-}
-
-
-llvm::Value* FunctionLowerer::LoadVTablePtrFromInterfaceFatptr(llvm::Value* fatptr) {
-  auto fatptr_ty = interface_fatptr_type();
-  auto vtable_ptr_field = builder_.CreateStructGEP(fatptr_ty, fatptr, 1);
-  return builder_.CreateLoad(fatptr_ty->getElementType(1), vtable_ptr_field);
 }
 
 

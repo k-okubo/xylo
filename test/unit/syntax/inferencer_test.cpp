@@ -1089,9 +1089,8 @@ TEST(InferencerTest, NestedFunction_InnerFuncPolymorphic) {
   EXPECT_EQ(apply_expr2->type()->Zonk(&subst, true, &arena), dog_type);
 
   TypePrinter vtp({.verbose = true});
-  EXPECT_EQ(
-      vtp(file_ast->declarations()[1]->symbol()->type()),
-      "forall A B C D. (A, B) -> C where <Bottom> <: A = (D => C) <: <Top>, <Bottom> <: B <: D, B <: D <: <Top>");
+  EXPECT_EQ(vtp(file_ast->declarations()[1]->symbol()->type()),
+            "forall A B C D. (A, B) -> C where <Bottom> <: A = (D => C) <: <Top>, <Bottom> <: B <: D, B <: D <: <Top>");
 
   TypePrinter stp;
   EXPECT_EQ(stp(file_ast->declarations()[1]->symbol()->type()), "(A -> B, C) -> B where C <: A");

@@ -2,6 +2,7 @@
 #ifndef XYLO_CODEGEN_PROGRAM_LOWERER_H_
 #define XYLO_CODEGEN_PROGRAM_LOWERER_H_
 
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/Module.h>
 
 #include "xylo/codegen/lowering_node.h"
@@ -30,6 +31,7 @@ class ProgramLowerer : public LoweringNode {
   llvm::StructType* closure_object_type();
   llvm::StructType* interface_fatptr_type();
   llvm::Function* xylo_malloc();
+  llvm::Value* null_ptr() const { return llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(llvm_context())); }
 
   const String& mangled_name() const override {
     static String name("XY");

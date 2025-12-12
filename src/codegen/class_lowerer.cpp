@@ -29,7 +29,7 @@ llvm::StructType* ClassLowerer::GetOrCreateInstanceStruct() {
 
   // create struct
   instance_struct_ = CreateInstanceStruct();
-  vtable_struct_ = GetOrCreateVTableStruct();
+  vtable_struct_ = CreateVTableStruct();
 
   // create vtable global
   vtable_global_ = CreateVTableGlobal();
@@ -62,7 +62,7 @@ llvm::StructType* ClassLowerer::CreateInstanceStruct() {
 }
 
 
-llvm::StructType* ClassLowerer::GetOrCreateVTableStruct() {
+llvm::StructType* ClassLowerer::CreateVTableStruct() {
   TypeConverter tc(xylo_context(), llvm_context());
 
   Vector<llvm::Type*> vtable_entries;
@@ -116,83 +116,112 @@ llvm::Constant* ClassLowerer::CreateVTableConstant(NominalType* super) {
   }
 
   for (auto method : super->methods()) {
-    vtable_entries.push_back(CreateVTableEntry(method));
+    vtable_entries.push_back(GetOrCreateVTableEntry(method));
   }
 
   return llvm::ConstantStruct::get(LoweringNode::GetVTableStruct(super), tc.ToArrayRef(vtable_entries));
 }
 
 
-llvm::Function* ClassLowerer::CreateVTableEntry(MemberInfo* super_method) {
-  auto member_it = member_symbols_.find(super_method->name());
-  if (member_it != member_symbols_.end()) {
-    return GetOrBuildFunction(member_it->second, {});
-  } else {
-    return GetOrCreateEmbeddedMethodBridge(super_method);
+llvm::Function* ClassLowerer::GetOrCreateVTableEntry(MemberInfo* super_method) {
+  // check cache
+  auto entry_it = vtable_methods_.find(super_method->name());
+  if (entry_it != vtable_methods_.end()) {
+    return entry_it->second;
   }
+
+  // create
+  auto entry_func = CreateVTableEntry(super_method);
+  vtable_methods_.emplace(super_method->name(), entry_func);
+
+  return entry_func;
 }
 
 
-llvm::Function* ClassLowerer::GetOrCreateEmbeddedMethodBridge(MemberInfo* super_method) {
-  // check cache
-  auto bridge_it = bridge_methods_.find(super_method->name());
-  if (bridge_it != bridge_methods_.end()) {
-    return bridge_it->second;
+llvm::Function* ClassLowerer::CreateVTableEntry(MemberInfo* super_method) {
+  auto method_name = super_method->name();
+  auto super_method_type = super_method->type()->As<FunctionType>();
+
+  // get method path
+  Vector<NominalSlot*> method_path;
+  xylo_nominal()->GetMemberPath(method_name, &method_path);
+  xylo_contract(!method_path.empty());
+
+  auto method_info = method_path[0];
+  xylo_contract(method_info->kind() == MemberInfo::Kind::kMethod);
+  auto method_type = method_info->As<MemberInfo>()->type();
+
+  // get method func
+  TypeArena arena;
+  Vector<TypeMetavar*> instantiated_vars;
+  auto instantiated_method_type = method_type->Instantiate(&arena, &instantiated_vars);
+  xylo_check(instantiated_method_type->ConstrainSubtypeOf(super_method_type));
+  auto method_func = LoweringNode::GetOrBuildMethod(method_info->owner(), method_name, instantiated_vars);
+  auto zonked_method_type = instantiated_method_type->Zonk(subst(), false, &arena)->As<FunctionType>();
+
+  if (method_info->owner() == xylo_nominal() && zonked_method_type->equals(super_method_type)) {
+    return method_func;
   }
 
+  BridgeInfo bridge_info{
+    .method_name = method_name,
+    .target_path = method_path,
+    .target_func = method_func,
+    .target_type = zonked_method_type,
+    .bridge_type = super_method_type,
+  };
+
+  return CreateMethodBridge(bridge_info);
+}
+
+
+llvm::Function* ClassLowerer::CreateMethodBridge(const BridgeInfo& bridge_info) {
   TypeConverter tc(xylo_context(), llvm_context());
-  auto method_type = super_method->type()->As<FunctionType>();
 
   // get bridge function type
   std::vector<llvm::Type*> param_types;
   param_types.push_back(tc.PointerType());  // this pointer
-  for (auto& param_type : method_type->params_type()->elements()) {
+  for (auto& param_type : bridge_info.bridge_type->params_type()->elements()) {
     param_types.push_back(tc.Convert(param_type, true));
   }
-  auto return_type = tc.Convert(method_type->return_type(), true);
+  auto return_type = tc.Convert(bridge_info.bridge_type->return_type(), true);
 
   String bridge_name;
   bridge_name += class_name();
   bridge_name += "__";
-  bridge_name += super_method->name()->str();
+  bridge_name += bridge_info.method_name->str();
+  bridge_name += "_bridge";
 
   // create bridge function
   auto name = tc.ToStringRef(bridge_name);
   auto bridge_type = llvm::FunctionType::get(return_type, param_types, false);
   auto bridge_func = llvm::Function::Create(bridge_type, llvm::Function::ExternalLinkage, name, llvm_module());
 
-  // cache bridge function
-  bridge_methods_.emplace(super_method->name(), bridge_func);
-
   // build bridge function body
   llvm::IRBuilder<> builder(llvm_context());
   auto bb = llvm::BasicBlock::Create(llvm_context(), "entry", bridge_func);
   builder.SetInsertPoint(bb);
 
-  // get embedded method owner pointer
-  Vector<NominalSlot*> method_path;
-  xylo_nominal()->GetMemberPath(super_method->name(), &method_path);
-  xylo_contract(!method_path.empty());
-
-  auto method_info = method_path[0];
-  xylo_contract(method_info->kind() == MemberInfo::Kind::kMethod);
-
-  BuildingUtil bu(&builder);
+  // get method owner pointer
+  BuildingUtil bu(this, &builder);
   auto this_ptr = bridge_func->getArg(0);
-  auto owner_ptr = bu.MemberPtr(instance_struct_, this_ptr, method_path, 1);  // skip method slot
+  auto owner_ptr = bu.MemberPtr(instance_struct_, this_ptr, bridge_info.target_path, 1);  // skip method slot
 
-  // get embedded method
-  auto embedded_method = LoweringNode::GetOrBuildMethod(method_info->owner(), super_method->name(), {});
-
-  // build call to embedded method
+  // call target method
   Vector<llvm::Value*> arg_values;
   arg_values.push_back(owner_ptr);
   for (size_t i = 1; i < bridge_func->arg_size(); ++i) {
-    arg_values.push_back(bridge_func->getArg(i));
+    auto arg_type = bridge_info.bridge_type->params_type()->elements()[i - 1];
+    auto param_type = bridge_info.target_type->params_type()->elements()[i - 1];
+
+    auto arg_value = bridge_func->getArg(i);
+    arg_values.push_back(bu.AdjustType(arg_value, arg_type, param_type));
   }
 
-  auto return_value = builder.CreateCall(embedded_method, tc.ToArrayRef(arg_values));
-  builder.CreateRet(return_value);
+  auto target_return_type = bridge_info.target_type->return_type();
+  auto bridge_return_type = bridge_info.bridge_type->return_type();
+  auto return_value = builder.CreateCall(bridge_info.target_func, tc.ToArrayRef(arg_values));
+  builder.CreateRet(bu.AdjustType(return_value, target_return_type, bridge_return_type));
 
   return bridge_func;
 }

@@ -18,11 +18,7 @@ class DeclarationLowerer : public LoweringNode {
   XyloContext* xylo_context() const { return root()->xylo_context(); }
   llvm::Module* llvm_module() const { return root()->llvm_module(); }
   llvm::LLVMContext& llvm_context() const { return root()->llvm_context(); }
-
-  llvm::IntegerType* size_type() const { return root()->size_type(); }
-  llvm::StructType* closure_object_type() const { return root()->closure_object_type(); }
-  llvm::StructType* interface_fatptr_type() const { return root()->interface_fatptr_type(); }
-  llvm::Function* xylo_malloc() const { return root()->xylo_malloc(); }
+  llvm::Value* null_ptr() const { return root()->null_ptr(); }
 };
 
 

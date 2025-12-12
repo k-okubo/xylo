@@ -34,6 +34,7 @@ class LoweringNode {
   };
 
   using TypeVec = Vector<Type*>;
+  using MetavarVec = Vector<TypeMetavar*>;
 
  private:
   LoweringNode(Kind kind, ProgramLowerer* root, LoweringNode* parent, SubstitutionPtr&& subst) :
@@ -75,21 +76,24 @@ class LoweringNode {
   virtual llvm::StructType* scope_data_type() const = 0;
 
  protected:
-  HString TypeArgsKey(const TypeVec& type_args) const;
-
   void RegisterDeclaration(Declaration* decl);
   void RegisterInterfaceDecl(InterfaceDeclaration* interface_decl);
   void RegisterClassDecl(ClassDeclaration* class_decl);
   void RegisterFunctionDecl(FunctionDeclaration* func_decl);
   void RegisterScopeRoute(Scope* scope, LoweringNode* route);
 
+  HString TypeArgsKey(const TypeVec& type_args) const;
+  SubstitutionPtr ExtendSubstitution(Type* callee, const TypeVec& type_args);
+
+ public:
   FunctionExpression* GetXyloFunction(Symbol* symbol);
 
   llvm::StructType* GetOrCreateVTableStruct(Symbol* symbol);
   llvm::StructType* GetOrCreateInstanceStruct(Symbol* symbol);
+  llvm::Function* GetOrBuildMethod(NominalType* type, Identifier* name, const MetavarVec& type_args);
   llvm::Function* GetOrBuildMethod(NominalType* type, Identifier* name, const TypeVec& type_args);
+  llvm::Function* GetOrBuildFunction(Symbol* symbol, const MetavarVec& type_args);
   llvm::Function* GetOrBuildFunction(Symbol* symbol, const TypeVec& type_args);
-  SubstitutionPtr ExtendSubstitution(Type* callee, const TypeVec& type_args);
 
   llvm::StructType* GetVTableStruct(NominalType* type);
   llvm::StructType* GetInstanceStruct(NominalType* type);

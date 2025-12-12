@@ -238,7 +238,7 @@ class NominalType : public Type {
 };
 
 
-class NominalSlot {
+class NominalSlot : public Downcastable {
  public:
   enum class Kind {
     kField,

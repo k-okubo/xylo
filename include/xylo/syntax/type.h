@@ -135,7 +135,7 @@ class Type : public Downcastable {
   virtual Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* subst = nullptr) const;
 
   virtual Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) = 0;
-  bool IsGroundType() const;
+  bool is_monotype() const;
 
  private:
   Kind kind_;

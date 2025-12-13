@@ -2078,7 +2078,7 @@ Type* TypeApplication::Zonk(const Substitution* subst, bool strict, TypeArena* a
 }
 
 
-bool Type::IsGroundType() const {
+bool Type::is_monotype() const {
   switch (kind()) {
     case Type::Kind::kError:
       return true;
@@ -2088,13 +2088,13 @@ bool Type::IsGroundType() const {
 
     case Type::Kind::kFunction: {
       auto func = As<FunctionType>();
-      return func->params_type()->IsGroundType() && func->return_type()->IsGroundType();
+      return func->params_type()->is_monotype() && func->return_type()->is_monotype();
     }
 
     case Type::Kind::kTuple: {
       auto tuple = As<TupleType>();
       for (auto elem : tuple->elements()) {
-        if (!elem->IsGroundType()) {
+        if (!elem->is_monotype()) {
           return false;
         }
       }

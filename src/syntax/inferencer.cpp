@@ -248,8 +248,8 @@ void Inferencer::RegisterMethod(NominalType* nominal_type, FunctionDeclaration* 
   auto func_type = func_expr->type();
   xylo_contract(func_type != nullptr);
 
-  // for incomplete types, resolve the type later
-  if (!func_type->IsGroundType()) {
+  // for implicit types, resolve the type later
+  if (!func_type->is_monotype()) {
     func_type = nullptr;
   }
 
@@ -402,7 +402,7 @@ void Inferencer::VisitFunctionDeclaration(FunctionDeclaration* decl) {
     auto func_type = decl->func()->type();
     xylo_contract(func_type != nullptr);
 
-    if (func_type->IsGroundType()) {
+    if (func_type->is_monotype()) {
       decl->symbol()->set_type(func_type);
     } else {
       ReportError(decl->symbol()->position(), "recursive functions must have an explicit type annotation");

@@ -1118,7 +1118,7 @@ TEST(OperatorTest, NotEqualFunction) {
 }
 
 
-TEST(OperatorTest, EqualIncompleteFunction) {
+TEST(OperatorTest, EqualUndeterminedFunction) {
   auto source = R"(
     def main() {
       return equal(foo, foo) ? 1 : 0
@@ -1138,7 +1138,7 @@ TEST(OperatorTest, EqualIncompleteFunction) {
 }
 
 
-TEST(OperatorTest, NotEqualIncompleteFunction) {
+TEST(OperatorTest, NotEqualUndeterminedFunction) {
   auto source = R"(
     def main() {
       return not_equal(foo, bar) ? 1 : 0

@@ -144,7 +144,7 @@ TEST(FunctionTest, PolymorphicFunction_Unused) {
 }
 
 
-TEST(FunctionTest, PolymorphicFunction_Incomplete) {
+TEST(FunctionTest, PolymorphicFunction_Undetermined) {
   auto source = R"(
     def main() {
       id(add)

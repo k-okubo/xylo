@@ -116,25 +116,10 @@ llvm::Constant* ClassLowerer::CreateVTableConstant(NominalType* super) {
   }
 
   for (auto method : super->methods()) {
-    vtable_entries.push_back(GetOrCreateVTableEntry(method));
+    vtable_entries.push_back(CreateVTableEntry(method));
   }
 
   return llvm::ConstantStruct::get(LoweringNode::GetVTableStruct(super), tc.ToArrayRef(vtable_entries));
-}
-
-
-llvm::Function* ClassLowerer::GetOrCreateVTableEntry(MemberInfo* super_method) {
-  // check cache
-  auto entry_it = vtable_methods_.find(super_method->name());
-  if (entry_it != vtable_methods_.end()) {
-    return entry_it->second;
-  }
-
-  // create
-  auto entry_func = CreateVTableEntry(super_method);
-  vtable_methods_.emplace(super_method->name(), entry_func);
-
-  return entry_func;
 }
 
 
@@ -163,8 +148,15 @@ llvm::Function* ClassLowerer::CreateVTableEntry(MemberInfo* super_method) {
     return method_func;
   }
 
+  String bridge_name;
+  bridge_name += class_name();
+  bridge_name += "__";
+  bridge_name += method_name->str();
+  bridge_name += "_for_";
+  bridge_name += super_method->owner()->name()->str();
+
   BridgeInfo bridge_info{
-    .method_name = method_name,
+    .bridge_name = std::move(bridge_name),
     .target_path = method_path,
     .target_func = method_func,
     .target_type = zonked_method_type,
@@ -186,14 +178,8 @@ llvm::Function* ClassLowerer::CreateMethodBridge(const BridgeInfo& bridge_info) 
   }
   auto return_type = tc.Convert(bridge_info.bridge_type->return_type(), true);
 
-  String bridge_name;
-  bridge_name += class_name();
-  bridge_name += "__";
-  bridge_name += bridge_info.method_name->str();
-  bridge_name += "_bridge";
-
   // create bridge function
-  auto name = tc.ToStringRef(bridge_name);
+  auto name = tc.ToStringRef(bridge_info.bridge_name);
   auto bridge_type = llvm::FunctionType::get(return_type, param_types, false);
   auto bridge_func = llvm::Function::Create(bridge_type, llvm::Function::ExternalLinkage, name, llvm_module());
 

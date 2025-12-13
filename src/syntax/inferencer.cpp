@@ -122,11 +122,6 @@ void Inferencer::PreVisitClassDeclaration(ClassDeclaration* decl) {
     state.in_progress = true;
   }
 
-  ClassDeclareInfo declare_info{
-    .class_decl = decl,
-    .method_decls = Map<Identifier*, FunctionDeclaration*>(),
-  };
-
   xylo_contract(decl->symbol()->type() != nullptr);
   auto class_type = decl->symbol()->type()->As<NominalType>();
 
@@ -161,13 +156,10 @@ void Inferencer::PreVisitClassDeclaration(ClassDeclaration* decl) {
       case Declaration::Kind::kFunction: {
         auto method_decl = inner_decl->As<FunctionDeclaration>();
         RegisterMethod(class_type, method_decl);
-        declare_info.method_decls.emplace(method_decl->symbol()->name(), method_decl);
         break;
       }
     }
   }
-
-  CheckOverrides(class_type, declare_info, true);
 
   {
     auto& state = GetEntityState(decl->symbol());
@@ -317,18 +309,11 @@ void Inferencer::CheckOverrides(NominalType* nominal_type, const ClassDeclareInf
     ReportError(pos, "method '" + method + "' from interface '" + base + "' is not implemented");
   };
 
-  auto report_incomplete_type = [=, this](Identifier* method_name, Identifier* base_owner_name) {
-    auto method = method_name->str().cpp_str();
-    auto base = base_owner_name->str().cpp_str();
-    auto& pos = position(method_name);
-    ReportError(pos, "method '" + method + "' implementing '" + base + "' must have an explicit type annotation");
-  };
-
   auto report_incompatible_override = [=, this](Identifier* method_name, Identifier* base_owner_name) {
     auto method = method_name->str().cpp_str();
     auto base = base_owner_name->str().cpp_str();
     auto& pos = position(method_name);
-    ReportError(pos, "method '" + method + "' must match signature in '" + base + "'");
+    ReportError(pos, "method '" + method + "' has incompatible type for interface '" + base + "'");
   };
 
   Vector<MemberInfo*> super_methods;
@@ -348,15 +333,21 @@ void Inferencer::CheckOverrides(NominalType* nominal_type, const ClassDeclareInf
       continue;
     }
 
-    // type annotation exists?
+    // for embedded methods
     if (member->type() == nullptr) {
-      report_incomplete_type(method_name, base_owner_name);
-      continue;
+      member->resolve_type();
+      xylo_contract(member->type() != nullptr);
     }
 
     // compatible type?
-    if (!member->type()->ConstrainSameAs(super_method->type())) {
-      report_incompatible_override(method_name, base_owner_name);
+    {
+      TypeArena arena;
+      Vector<TypeMetavar*> vars;
+      auto member_type = member->type()->Instantiate(&arena, &vars);
+
+      if (!member_type->ConstrainSubtypeOf(super_method->type())) {
+        report_incompatible_override(method_name, base_owner_name);
+      }
     }
   }
 }
@@ -380,9 +371,22 @@ void Inferencer::VisitDeclaration(Declaration* decl) {
 
 
 void Inferencer::VisitClassDeclaration(ClassDeclaration* decl) {
+  ClassDeclareInfo declare_info{
+    .class_decl = decl,
+    .method_decls = Map<Identifier*, FunctionDeclaration*>(),
+  };
+
   for (auto& inner_decl : decl->declarations()) {
     VisitDeclaration(inner_decl.get());
+
+    if (inner_decl->kind() == Declaration::Kind::kFunction) {
+      auto method_decl = inner_decl->As<FunctionDeclaration>();
+      declare_info.method_decls.emplace(method_decl->symbol()->name(), method_decl);
+    }
   }
+
+  auto class_type = decl->symbol()->type()->As<NominalType>();
+  CheckOverrides(class_type, declare_info, true);
 }
 
 
@@ -1124,29 +1128,36 @@ void Inferencer::VisitSelectExpression(SelectExpression* expr, InferenceContext*
   expr->set_type(member_type);
   expr->set_member_constraint(memcon);
 
-  memcon->set_on_error([this, expr](const NominalType* nominal) {
+  memcon->set_on_error([this, expr](const NominalType* nominal, const NominalType* other) {
+    auto member_name = expr->member_name()->str().cpp_str();
+    auto nominal_name = nominal->name()->str().cpp_str();
+    auto other_name = other != nullptr ? other->name()->str().cpp_str() : "";
+
+    if (other != nullptr) {
+      ReportError(expr->position(), "method '" + member_name + "' is ambiguous");
+      ReportNote(SourceRange(), "candidates are from interfaces '" + nominal_name + "' and '" + other_name + "'");
+      return;
+    }
+
     auto member_info = nominal->GetMember(expr->member_name());
     if (member_info != nullptr) {
-      ReportError(expr->position(), "member '" + expr->member_name()->str().cpp_str() + "' has incompatible type");
+      ReportError(expr->position(), "member '" + member_name + "' has incompatible type");
+      return;
+    }
 
+    // member_info == nullptr
+    Vector<MemberInfo*> embedded_members;
+    nominal->FindEmbededMembers(expr->member_name(), &embedded_members);
+
+    if (embedded_members.empty()) {
+      ReportError(expr->position(), "cannot find member '" + member_name + "' in '" + nominal_name + "'");
     } else {
-      Vector<MemberInfo*> embedded_members;
-      nominal->FindEmbededMembers(expr->member_name(), &embedded_members);
+      xylo_contract(embedded_members.size() >= 2);
+      auto candidate1 = embedded_members[0]->owner()->name()->str().cpp_str();
+      auto candidate2 = embedded_members[1]->owner()->name()->str().cpp_str();
 
-      if (embedded_members.empty()) {
-        ReportError(expr->position(), "cannot find member '" + expr->member_name()->str().cpp_str() + "'");
-      } else {
-        ReportError(expr->position(), "member '" + expr->member_name()->str().cpp_str() + "' is ambiguous");
-
-        std::string candidate_classes;
-        for (size_t i = 0; i < embedded_members.size(); ++i) {
-          candidate_classes += "'" + embedded_members[i]->owner()->name()->str().cpp_str() + "'";
-          if (i + 1 < embedded_members.size()) {
-            candidate_classes += ", ";
-          }
-        }
-        ReportNote(SourceRange(), "candidates are from " + candidate_classes);
-      }
+      ReportError(expr->position(), "member '" + member_name + "' is ambiguous");
+      ReportNote(SourceRange(), "candidates are from embedded classes '" + candidate1 + "' and '" + candidate2 + "'");
     }
   });
 

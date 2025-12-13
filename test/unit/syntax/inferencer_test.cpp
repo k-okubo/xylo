@@ -1614,7 +1614,7 @@ TEST(InferencerTest, CannotFindMember_DirectRead) {
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_TRUE(inferencer.has_diagnostics());
   EXPECT_EQ(inferencer.diagnostics().size(), 1);
-  EXPECT_EQ(inferencer.diagnostics()[0].message, "cannot find member 'b'");
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "cannot find member 'b' in 'Foo'");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 18);
 }
@@ -1637,7 +1637,7 @@ TEST(InferencerTest, CannotFindMember_DirectWrite) {
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_TRUE(inferencer.has_diagnostics());
   EXPECT_EQ(inferencer.diagnostics().size(), 1);
-  EXPECT_EQ(inferencer.diagnostics()[0].message, "cannot find member 'b'");
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "cannot find member 'b' in 'Foo'");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 11);
 }
@@ -1664,7 +1664,7 @@ TEST(InferencerTest, CannotFindMember_FunctionRead) {
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_TRUE(inferencer.has_diagnostics());
   ASSERT_EQ(inferencer.diagnostics().size(), 2);
-  EXPECT_EQ(inferencer.diagnostics()[0].message, "cannot find member 'b'");
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "cannot find member 'b' in 'Foo'");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 10);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 18);
 
@@ -1695,7 +1695,7 @@ TEST(InferencerTest, CannotFindMember_FunctionWrite) {
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_TRUE(inferencer.has_diagnostics());
   ASSERT_EQ(inferencer.diagnostics().size(), 2);
-  EXPECT_EQ(inferencer.diagnostics()[0].message, "cannot find member 'b'");
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "cannot find member 'b' in 'Foo'");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 10);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 11);
 
@@ -2533,7 +2533,8 @@ TEST(InferencerTest, Embedding_AmbiguousField) {
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 13);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 19);
 
-  EXPECT_EQ(inferencer.diagnostics()[1].message, "candidates are from 'Bar', 'Baz'");
+  EXPECT_EQ(inferencer.diagnostics()[1].message, "candidates are from embedded classes 'Bar' and 'Baz'");
+  EXPECT_EQ(inferencer.diagnostics()[1].severity, DiagnosticSeverity::kNote);
 }
 
 
@@ -2612,11 +2613,11 @@ TEST(InferencerTest, Interface_Basic) {
 
     class Foo : ValueContainer {
       value: int
-      def get_value(): int => value
+      def get_value() => value
     }
 
     class Bar : ValueContainer {
-      def get_value(): int => 0
+      def get_value() => 0
     }
   )";
 
@@ -2694,32 +2695,6 @@ TEST(InferencerTest, Interface_MissingImplementation) {
 }
 
 
-TEST(InferencerTest, Interface_IncompleteTypeAnnotation) {
-  auto source = R"(
-    interface Container {
-      def get(): int
-    }
-
-    class Box : Container {
-      value: int
-      def get() => value
-    }
-  )";
-
-  XyloContext context;
-  auto file_ast = GetResolvedAST(&context, source);
-
-  Inferencer inferencer(&context);
-  inferencer.VisitFileAST(file_ast.get());
-  ASSERT_TRUE(inferencer.has_diagnostics());
-  EXPECT_EQ(inferencer.diagnostics().size(), 1);
-  EXPECT_EQ(inferencer.diagnostics()[0].message,
-            "method 'get' implementing 'Container' must have an explicit type annotation");
-  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 8);
-  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 11);
-}
-
-
 TEST(InferencerTest, Interface_IncompatibleImplementation) {
   auto source = R"(
     interface Printable {
@@ -2728,7 +2703,7 @@ TEST(InferencerTest, Interface_IncompatibleImplementation) {
 
     class Square : Printable {
       side: float
-      def print(): int => 42
+      def print() => 42
     }
   )";
 
@@ -2739,7 +2714,7 @@ TEST(InferencerTest, Interface_IncompatibleImplementation) {
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_TRUE(inferencer.has_diagnostics());
   EXPECT_EQ(inferencer.diagnostics().size(), 1);
-  EXPECT_EQ(inferencer.diagnostics()[0].message, "method 'print' must match signature in 'Printable'");
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "method 'print' has incompatible type for interface 'Printable'");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 8);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 11);
 }
@@ -2766,6 +2741,47 @@ TEST(InferencerTest, Interface_Cyclic) {
   EXPECT_EQ(inferencer.diagnostics()[0].message, "cyclic inheritance detected");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 19);
+}
+
+
+TEST(InferencerTest, Interface_AmbiguousMethod) {
+  auto source = R"(
+    interface A {
+      def get(): int
+    }
+
+    interface B {
+      def get(): int
+    }
+
+    class Foo : A, B {
+      def get() => 42
+    }
+
+    class Bar : A, B {
+      def get() => 3
+    }
+
+    def main() {
+      let f = true ? new Foo{} : new Bar{}
+      return f.get()
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  ASSERT_EQ(inferencer.diagnostics().size(), 2);
+
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "method 'get' is ambiguous");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 20);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 16);
+
+  EXPECT_EQ(inferencer.diagnostics()[1].message, "candidates are from interfaces 'A' and 'B'");
+  EXPECT_EQ(inferencer.diagnostics()[1].severity, DiagnosticSeverity::kNote);
 }
 
 

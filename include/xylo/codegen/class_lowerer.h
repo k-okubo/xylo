@@ -18,8 +18,7 @@ class ClassLowerer : public DeclarationLowerer {
       instance_struct_(nullptr),
       vtable_struct_(nullptr),
       vtable_global_(nullptr),
-      member_symbols_(),
-      vtable_methods_() {}
+      member_symbols_() {}
 
   ~ClassLowerer() = default;
 
@@ -44,11 +43,10 @@ class ClassLowerer : public DeclarationLowerer {
   llvm::GlobalVariable* CreateVTableGlobal();
   llvm::Constant* CreateVTableConstant();
   llvm::Constant* CreateVTableConstant(NominalType* super);
-  llvm::Function* GetOrCreateVTableEntry(MemberInfo* super_method);
   llvm::Function* CreateVTableEntry(MemberInfo* super_method);
 
   struct BridgeInfo {
-    Identifier* method_name;
+    String bridge_name;
     Vector<NominalSlot*>& target_path;
     llvm::Function* target_func;
     xylo::FunctionType* target_type;
@@ -66,7 +64,6 @@ class ClassLowerer : public DeclarationLowerer {
   llvm::GlobalVariable* vtable_global_;
 
   Map<Identifier*, Symbol*> member_symbols_;
-  Map<Identifier*, llvm::Function*> vtable_methods_;
 };
 
 

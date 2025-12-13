@@ -19,11 +19,11 @@ TEST(InterfaceTest, Basic) {
 
     class Foo : ValueGetter {
       value: int
-      def get_value(): int => value
+      def get_value() => value
     }
 
     class Bar : ValueGetter {
-      def get_value(): int => 0
+      def get_value() => 0
     }
   )";
 
@@ -49,7 +49,7 @@ TEST(InterfaceTest, ClassToInterface) {
 
     class Foo : ValueGetter {
       value: int
-      def get_value(): int => value
+      def get_value() => value
     }
   )";
 
@@ -81,7 +81,7 @@ TEST(InterfaceTest, InterfaceUpcast) {
 
     class Foo : MiddleGetter {
       value: int
-      def get_value(): int => value
+      def get_value() => value
     }
   )";
 
@@ -109,7 +109,7 @@ TEST(InterfaceTest, SupertypesMethodCall) {
 
     class Foo : MiddleGetter {
       value: int
-      def get_value(): int => value
+      def get_value() => value
     }
   )";
 
@@ -144,8 +144,8 @@ TEST(InterfaceTest, MultipleInterfaces) {
 
     class Foo : ValueGetter, ValueSetter {
       value: int
-      def get_value(): int => value
-      def set_value(v: int): unit { this.value = v }
+      def get_value() => value
+      def set_value(v) { this.value = v }
     }
   )";
 
@@ -166,14 +166,14 @@ TEST(InterfaceTest, DifferentScope) {
       def create_foo() {
         return new Foo{}
         class Foo : ValueGetter {
-          def get_value(): int => a
+          def get_value() => a
         }
       }
 
       def create_bar() {
         return new Bar{}
         class Bar : ValueGetter {
-          def get_value(): int => b
+          def get_value() => b
         }
       }
 
@@ -185,6 +185,94 @@ TEST(InterfaceTest, DifferentScope) {
 
   auto result = CompileAndRun(source);
   EXPECT_EQ(result, 42);
+}
+
+
+TEST(InterfaceTest, ImplementsWithPolymorphicMethod) {
+  auto source = R"(
+    def main() {
+      let foo = new Foo{}
+      let check = transform(foo, 1) == 2
+      return check ? 1 : 0
+    }
+
+    def transform(t: Transformer, v) {
+      return t.transform(v)
+    }
+
+    interface Transformer {
+      def transform(v: int): int
+    }
+
+    class Foo : Transformer {
+      def transform(v) => v * 2
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(InterfaceTest, ImplementsWithBridge) {
+  auto source = R"(
+    def main() {
+      let foo = new Foo{}
+      let check = transform(foo, 1) == 2.0
+      return check ? 1 : 0
+    }
+
+    def transform(t: Transformer, v) {
+      return t.transform(v)
+    }
+
+    interface Transformer {
+      def transform(v: int): float
+    }
+
+    class Foo : Transformer {
+      def transform(v: float) => v * 2.0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
+TEST(InterfaceTest, ImplementsMultipleInterfaces) {
+  auto source = R"(
+    def main() {
+      let foo = new Foo{}
+      let int_result = transform_int(foo, 42)
+      let float_result = transform_float(foo, 42.0)
+      let check = int_result == 84 && float_result == 84.0
+      return check ? 1 : 0
+    }
+
+    def transform_int(t: IntTransformer, v) {
+      return t.transform(v)
+    }
+
+    def transform_float(t: FloatTransformer, v) {
+      return t.transform(v)
+    }
+
+    interface IntTransformer {
+      def transform(v: int): int
+    }
+
+    interface FloatTransformer {
+      def transform(v: float): float
+    }
+
+    class Foo : IntTransformer, FloatTransformer {
+      def transform(v) => v * 2
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
 }
 
 
@@ -218,8 +306,8 @@ TEST(InterfaceTest, ImplementsUsingEmbedding) {
 
     class Bar {
       value: int
-      def get_value(): int => value
-      def set_value(v: int): unit { this.value = v }
+      def get_value() => value
+      def set_value(v) { this.value = v }
     }
   )";
 
@@ -263,8 +351,8 @@ TEST(Interface, MultipleImplementsUsingEmbedding) {
 
     class Bar {
       value: int
-      def get_value(): int => value
-      def set_value(v: int): unit { this.value = v }
+      def get_value() => value
+      def set_value(v) { this.value = v }
     }
   )";
 

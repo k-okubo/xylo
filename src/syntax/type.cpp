@@ -357,21 +357,7 @@ static bool ApplySubtypingRules(S src, D dst, const P& proc) {
   if (src->kind() == Type::Kind::kNominal && dst->kind() == Type::Kind::kMemberConstraint) {
     auto src_nominal = src->template As<NominalType>();
     auto dst_memcon = dst->template As<MemberConstraint>();
-    if (dst_memcon->is_resolved()) {
-      return src_nominal->IsSubtypeOf(dst_memcon->origin_owner());
-    }
     return proc.onNominalToMemcon(src_nominal, dst_memcon);
-  }
-
-  // member constraint src is only compatible with nominal dst if resolved
-  if (src->kind() == Type::Kind::kMemberConstraint) {
-    if (dst->kind() == Type::Kind::kNominal) {
-      auto src_memcon = src->template As<MemberConstraint>();
-      if (src_memcon->is_resolved()) {
-        return src_memcon->origin_owner()->IsSubtypeOf(dst);
-      }
-    }
-    return false;
   }
 
   // function to function: contravariant in parameter, covariant in return
@@ -661,67 +647,74 @@ bool Type::ConstrainSameAs(Type* other) {
 }
 
 
-static Type* FindOriginOwner(NominalType* owner, Identifier* member_name, MemberInfo::Kind kind, TypeArena* arena) {
-  Vector<MemberInfo*> super_members;
-  owner->FindSuperMembers(member_name, &super_members);
-
-  auto origin_owners = std::make_unique<UnionType>();
-  origin_owners->add_element(owner);
-
-  for (auto super_member : super_members) {
-    if (super_member->kind() == kind) {
-      origin_owners->add_element(super_member->owner());
+template <typename F>
+static void ForeachSupertype(Type* t, F proc) {
+  if (t->kind() == Type::Kind::kNominal) {
+    auto nominal = t->As<NominalType>();
+    for (auto super : nominal->supers()) {
+      proc(super);
     }
+    return;
   }
 
-  origin_owners->ShrinkToUpper();
+  throw std::logic_error("not implemented: VisitSupertype for such a type");
+}
 
-  switch (origin_owners->elements().size()) {
-    case 0:
-      xylo_unreachable();
-      break;
 
-    case 1:
-      return origin_owners->elements()[0];
-
-    default: {
-      auto result = origin_owners.get();
-      arena->adopt_type(std::move(origin_owners));
-      return result;
-    }
+static void PutCommonAncestorsOfPair(Type* t1, Type* t2, Vector<Type*>* ancestors) {
+  if (t2->IsSubtypeOf(t1)) {
+    ancestors->push_back(t1);
+    return;
+  }
+  if (t1->IsSubtypeOf(t2)) {
+    ancestors->push_back(t2);
+    return;
   }
 
-  xylo_unreachable();
+  // traverse supertypes to find a common ancestor
+  ForeachSupertype(t1, [=](Type* t1_super) {
+    PutCommonAncestorsOfPair(t1_super, t2, ancestors);
+  });
+}
+
+
+static void FindCommonAncestors(const UnionType* types, Vector<Type*>* out_ancestors) {
+  if (types->empty()) {
+    return;
+  }
+
+  Vector<Type*> partial_ancestors;
+  UnionType bottom_type;  // empty union behaves bottom type
+  partial_ancestors.push_back(&bottom_type);
+
+  for (auto elem : types->elements()) {
+    Vector<Type*> partial_ancestors_next;
+    for (auto a : partial_ancestors) {
+      PutCommonAncestorsOfPair(a, elem, &partial_ancestors_next);
+    }
+    partial_ancestors = std::move(partial_ancestors_next);
+  }
+
+  *out_ancestors = std::move(partial_ancestors);
 }
 
 
 bool MemberConstraint::CanResolve(const NominalType* nominal, TypePairSet* visited) const {
-  auto member = nominal->GetMember(this->name());
-  if (member == nullptr) {
-    CallbackOnError(nominal);
-    return false;
-  }
-
-  if (member->type() == nullptr) {
-    member->resolve_type();
-    xylo_contract(member->type() != nullptr);
-  }
-
-  if (is_mutable() && member->kind() != MemberInfo::Kind::kField) {
-    CallbackOnError(nominal);
+  auto [owner, member_info] = FindConstraintMember(const_cast<NominalType*>(nominal));
+  if (owner == nullptr) {
     return false;
   }
 
   TypeArena arena;
   Vector<TypeMetavar*> instantiated_vars;
-  auto member_type = member->type()->Instantiate(&arena, &instantiated_vars);
+  Type* member_type = member_info->type()->Instantiate(&arena, &instantiated_vars);
 
-  if (!member_type->CanConstrainSubtypeOf(this->type(), visited)) {
-    CallbackOnError(nominal);
+  if (!member_type->CanConstrainSubtypeOf(expected_type(), visited)) {
+    CallbackOnError(owner);
     return false;
   }
-  if (!this->type()->CanConstrainSubtypeOf(member_type, visited)) {
-    CallbackOnError(nominal);
+  if (!expected_type()->CanConstrainSubtypeOf(member_type, visited)) {
+    CallbackOnError(owner);
     return false;
   }
 
@@ -730,10 +723,69 @@ bool MemberConstraint::CanResolve(const NominalType* nominal, TypePairSet* visit
 
 
 bool MemberConstraint::Resolve(NominalType* nominal, TypePairSet* visited) {
-  auto member = nominal->GetMember(this->name());
-  if (member == nullptr) {
-    CallbackOnError(nominal);
+  auto [owner, member_info] = FindConstraintMember(nominal);
+  if (owner == nullptr) {
     return false;
+  }
+
+  TypeArena arena;
+  Vector<TypeMetavar*> instantiated_vars;
+  Type* member_type = member_info->type()->Instantiate(&arena, &instantiated_vars);
+
+  if (!member_type->ConstrainSameAs(expected_type())) {
+    CallbackOnError(owner);
+    return false;
+  }
+
+  set_resolved_in(owner);
+  set_resolved_member(member_info);
+  set_instantiated_vars(std::move(instantiated_vars));
+  this->arena()->merge(&arena);
+
+  return true;
+}
+
+
+std::pair<NominalType*, MemberInfo*> MemberConstraint::FindConstraintMember(NominalType* nominal) const {
+  NominalType* owner = nullptr;
+  MemberInfo* member = nullptr;
+
+  if (!is_resolved()) {
+    owner = nominal;
+    member = nominal->GetMember(member_name());
+    if (member == nullptr) {
+      CallbackOnError(owner);
+      return {nullptr, nullptr};
+    }
+
+  } else {
+    Vector<Type*> ancestors;
+    PutCommonAncestorsOfPair(resolved_in_, nominal, &ancestors);
+
+    if (ancestors.empty()) {
+      // no common ancestor; no need to report error here
+      return {nullptr, nullptr};
+    }
+
+    for (auto anc : ancestors) {
+      auto anc_nominal = anc->As<NominalType>();
+      auto anc_member = anc_nominal->GetMember(member_name());
+      if (anc_member == nullptr) {
+        continue;
+      }
+      if (owner != nullptr) {
+        // ambiguous member
+        CallbackOnError(owner, anc_nominal);
+        return {nullptr, nullptr};
+      }
+      owner = anc_nominal;
+      member = anc_member;
+    }
+
+    if (owner == nullptr) {
+      CallbackOnError(nominal);
+      return {nullptr, nullptr};
+    }
   }
 
   if (member->type() == nullptr) {
@@ -742,41 +794,16 @@ bool MemberConstraint::Resolve(NominalType* nominal, TypePairSet* visited) {
   }
 
   if (is_mutable() && member->kind() != MemberInfo::Kind::kField) {
-    CallbackOnError(nominal);
-    return false;
+    CallbackOnError(owner);
+    return {nullptr, nullptr};
   }
 
-  TypeArena arena;
-  Vector<TypeMetavar*> instantiated_vars;
-  auto member_type = member->type()->Instantiate(&arena, &instantiated_vars);
-
-  if (!member_type->ConstrainSameAs(this->type())) {
-    CallbackOnError(nominal);
-    return false;
-  }
-
-  this->set_resolved(member);
-  this->set_instantiated_vars(std::move(instantiated_vars));
-  this->arena()->merge(&arena);
-
-  auto owner = member->owner();
-  if (!nominal->IsSubtypeOf(owner)) {
-    // 'member' is embeded
-    owner = nominal;
-  }
-
-  if (member->kind() == MemberInfo::Kind::kMethod) {
-    set_origin_owner(FindOriginOwner(owner, this->name(), MemberInfo::Kind::kMethod, this->arena()));
-  } else {
-    set_origin_owner(owner);
-  }
-
-  return true;
+  return {owner, member};
 }
 
 
 bool MemberConstraint::SetMutable(bool m) {
-  if (m && is_resolved() && resolved()->kind() != MemberInfo::Kind::kField) {
+  if (m && is_resolved() && resolved_member()->kind() != MemberInfo::Kind::kField) {
     return false;
   }
 
@@ -1053,16 +1080,16 @@ bool VariableBase::ConstrainUpperBoundForAtom(Type* new_ub, TypePairSet* visited
     auto owner_tyvar = owner_->As<TypeVariable>();
     auto ub_memcon = new_ub->As<MemberConstraint>();
 
-    if (ub_memcon->type()->kind() == Type::Kind::kTyvar) {
-      auto ub_member_tyvar = ub_memcon->type()->As<TypeVariable>();
+    if (ub_memcon->expected_type()->kind() == Type::Kind::kTyvar) {
+      auto ub_member_tyvar = ub_memcon->expected_type()->As<TypeVariable>();
       if (owner_tyvar->scope()->is_outer_than(ub_member_tyvar->scope())) {
         ub_member_tyvar->set_scope(owner_tyvar->scope());
       }
     }
-    if (ub_memcon->type()->kind() == Type::Kind::kMetavar) {
+    if (ub_memcon->expected_type()->kind() == Type::Kind::kMetavar) {
       auto ub_member_tyvar = new TypeVariable(owner_tyvar->scope());
-      ub_member_tyvar->ConstrainSameAs(ub_memcon->type());
-      ub_memcon->set_type(ub_member_tyvar);
+      ub_member_tyvar->ConstrainSameAs(ub_memcon->expected_type());
+      ub_memcon->set_expected_type(ub_member_tyvar);
       owner_->arena()->adopt_type(TypePtr(ub_member_tyvar));
     }
   }
@@ -1561,7 +1588,7 @@ static void CollectFreeTyvars(Scope* scope, Type* type, TyvarCollection* out_ftv
 
     case Type::Kind::kMemberConstraint: {
       auto memcon = type->As<MemberConstraint>();
-      CollectFreeTyvars(scope, memcon->type(), out_ftv);
+      CollectFreeTyvars(scope, memcon->expected_type(), out_ftv);
       return;
     }
 
@@ -1808,15 +1835,15 @@ Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const
 
     case Type::Kind::kMemberConstraint: {
       auto memcon = type->As<MemberConstraint>();
-      auto sbsted_type = Apply(memcon->type(), arena);
-      if (sbsted_type == memcon->type()) {
+      auto expected_type = Apply(memcon->expected_type(), arena);
+      if (expected_type == memcon->expected_type()) {
         return memcon;
       } else {
-        auto new_memcon = new MemberConstraint(memcon->name(), sbsted_type);
+        auto new_memcon = new MemberConstraint(memcon->member_name(), expected_type);
         new_memcon->SetMutable(memcon->is_mutable());
-        new_memcon->set_resolved(memcon->resolved());
-        new_memcon->set_origin_owner(memcon->origin_owner());
         new_memcon->set_on_error(memcon->on_error());
+        new_memcon->set_resolved_in(memcon->resolved_in());
+        new_memcon->set_resolved_member(memcon->resolved_member());
         arena->adopt_type(TypePtr(new_memcon));
         return new_memcon;
       }
@@ -1874,58 +1901,6 @@ Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const
   }
 
   xylo_unreachable();
-}
-
-
-template <typename F>
-static void ForeachSupertype(Type* t, F proc) {
-  if (t->kind() == Type::Kind::kNominal) {
-    auto nominal = t->As<NominalType>();
-    for (auto super : nominal->supers()) {
-      proc(super);
-    }
-    return;
-  }
-
-  throw std::logic_error("not implemented: VisitSupertype for such a type");
-}
-
-
-static void PutCommonAncestorsOfPair(Type* t1, Type* t2, Vector<Type*>* ancestors) {
-  if (t2->IsSubtypeOf(t1)) {
-    ancestors->push_back(t1);
-    return;
-  }
-  if (t1->IsSubtypeOf(t2)) {
-    ancestors->push_back(t2);
-    return;
-  }
-
-  // traverse supertypes to find a common ancestor
-  ForeachSupertype(t1, [=](Type* t1_super) {
-    PutCommonAncestorsOfPair(t1_super, t2, ancestors);
-  });
-}
-
-
-static void FindCommonAncestors(const UnionType* types, Vector<Type*>* out_ancestors) {
-  if (types->empty()) {
-    return;
-  }
-
-  Vector<Type*> partial_ancestors;
-  UnionType bottom_type;  // empty union behaves bottom type
-  partial_ancestors.push_back(&bottom_type);
-
-  for (auto elem : types->elements()) {
-    Vector<Type*> partial_ancestors_next;
-    for (auto a : partial_ancestors) {
-      PutCommonAncestorsOfPair(a, elem, &partial_ancestors_next);
-    }
-    partial_ancestors = std::move(partial_ancestors_next);
-  }
-
-  *out_ancestors = std::move(partial_ancestors);
 }
 
 
@@ -2206,15 +2181,15 @@ std::string TypePrinter::Print(const MemberConstraint* type, bool paren, Status*
   std::string str = "";
 
   if (!options_.verbose && type->is_resolved()) {
-    return Print(type->origin_owner(), paren, status);
+    return Print(type->resolved_in(), paren, status);
   }
 
   if (type->is_resolved()) {
-    str += Print(type->origin_owner(), false, status);
+    str += Print(type->resolved_in(), false, status);
     str += ".";
   }
-  str += type->name()->str().cpp_str();
-  str += ": " + Print(type->type(), false, status);
+  str += type->member_name()->str().cpp_str();
+  str += ": " + Print(type->expected_type(), false, status);
 
   return "{" + str + "}";
 }
@@ -2553,7 +2528,7 @@ std::string TypePrinter::PrintConstraints(Status* status) const {
         if (ub->kind() == Type::Kind::kMemberConstraint) {
           auto memcon = ub->template As<MemberConstraint>();
           if (memcon->is_resolved()) {
-            ub = memcon->origin_owner();
+            ub = memcon->resolved_in();
           }
         }
         if (ub == var) {

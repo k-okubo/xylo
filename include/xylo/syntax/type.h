@@ -308,36 +308,39 @@ class SuperInfo : public NominalSlot {
 
 class MemberConstraint : public Type {
  public:
-  MemberConstraint(Identifier* name, Type* type) :
+  using ErrorCallback = std::function<void(const NominalType*, const NominalType*)>;
+
+  MemberConstraint(Identifier* member_name, Type* expected_type) :
       Type(Kind::kMemberConstraint),
-      name_(name),
-      type_(type),
+      member_name_(member_name),
+      expected_type_(expected_type),
       mutable_(false),
-      resolved_(nullptr),
-      instantiated_vars_(),
-      origin_owner_(nullptr),
-      on_error_(nullptr) {}
+      on_error_(nullptr),
+      resolved_in_(nullptr),
+      resolved_member_(nullptr),
+      instantiated_vars_() {}
 
-  Identifier* name() const { return name_; }
+  Identifier* member_name() const { return member_name_; }
 
-  Type* type() const { return type_; }
-  void set_type(Type* type) { type_ = type; }
+  Type* expected_type() const { return expected_type_; }
+  void set_expected_type(Type* expected_type) { expected_type_ = expected_type; }
 
   bool is_mutable() const { return mutable_; }
   bool SetMutable(bool m);
 
-  bool is_resolved() const { return resolved_ != nullptr; }
-  MemberInfo* resolved() const { return resolved_; }
-  void set_resolved(MemberInfo* resolved) { resolved_ = resolved; }
+  ErrorCallback on_error() const { return on_error_; }
+  void set_on_error(ErrorCallback on_error) { on_error_ = on_error; }
+
+  bool is_resolved() const { return resolved_in_ != nullptr; }
+
+  NominalType* resolved_in() const { return resolved_in_; }
+  void set_resolved_in(NominalType* resolved_in) { resolved_in_ = resolved_in; }
+
+  MemberInfo* resolved_member() const { return resolved_member_; }
+  void set_resolved_member(MemberInfo* resolved_member) { resolved_member_ = resolved_member; }
 
   const Vector<TypeMetavar*>& instantiated_vars() const { return instantiated_vars_; }
   void set_instantiated_vars(Vector<TypeMetavar*>&& vars) { instantiated_vars_ = std::move(vars); }
-
-  Type* origin_owner() const { return origin_owner_; }
-  void set_origin_owner(Type* owner) { origin_owner_ = owner; }
-
-  std::function<void(const NominalType*)> on_error() const { return on_error_; }
-  void set_on_error(std::function<void(const NominalType*)> on_error) { on_error_ = on_error; }
 
   bool equals(const Type* other) const override;
   bool is_atomic_type() const override { return true; }
@@ -345,9 +348,12 @@ class MemberConstraint : public Type {
   bool CanResolve(const NominalType* nominal, TypePairSet* visited) const;
   bool Resolve(NominalType* nominal, TypePairSet* visited);
 
-  void CallbackOnError(const NominalType* nominal) const {
+ protected:
+  std::pair<NominalType*, MemberInfo*> FindConstraintMember(NominalType* nominal) const;
+
+  void CallbackOnError(const NominalType* nominal, const NominalType* other = nullptr) const {
     if (on_error_) {
-      on_error_(nominal);
+      on_error_(nominal, other);
     }
   }
 
@@ -355,13 +361,14 @@ class MemberConstraint : public Type {
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
-  Identifier* name_;
-  Type* type_;
+  Identifier* member_name_;
+  Type* expected_type_;
   bool mutable_;
-  MemberInfo* resolved_;
+  ErrorCallback on_error_;
+
+  NominalType* resolved_in_;
+  MemberInfo* resolved_member_;
   Vector<TypeMetavar*> instantiated_vars_;
-  Type* origin_owner_;
-  std::function<void(const NominalType*)> on_error_;
 };
 
 

@@ -176,7 +176,7 @@ DeclarationPtr Parser::ParseInterfaceDeclaration(Scope* scope) {
 
   auto interface_name = LastTokenValue().as_identifier;
   auto& ident_pos = LastTokenPosition();
-  auto symbol = Symbol::Create(Symbol::Kind::kClass, scope, interface_name, ident_pos);
+  auto symbol = Symbol::Create(Symbol::Kind::kType, scope, interface_name, ident_pos);
   auto interface = InterfaceDeclaration::Create(std::move(symbol));
   auto inner_scope = scope->CreateChild();
 
@@ -219,7 +219,7 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
 
   auto class_name = LastTokenValue().as_identifier;
   auto& ident_pos = LastTokenPosition();
-  auto symbol = Symbol::Create(Symbol::Kind::kClass, scope, class_name, ident_pos);
+  auto symbol = Symbol::Create(Symbol::Kind::kType, scope, class_name, ident_pos);
   auto clazz = ClassDeclaration::Create(std::move(symbol));
   auto inner_scope = scope->CreateChild();
 
@@ -273,7 +273,7 @@ ClassFieldPtr Parser::ParseClassField(Scope* scope) {
   Expect(Token::kIdentifier);
   auto field_name = LastTokenValue().as_identifier;
   auto& field_ident_pos = LastTokenPosition();
-  auto field_symbol = Symbol::Create(Symbol::Kind::kVarVariable, scope, field_name, field_ident_pos);
+  auto field_symbol = Symbol::Create(Symbol::Kind::kVar, scope, field_name, field_ident_pos);
   auto field = ClassField::Create(std::move(field_symbol));
 
   if (Expect(Token::kColon)) {
@@ -337,7 +337,7 @@ FunctionDeclarationPtr Parser::ParseFunctionDeclaration(Scope* scope, bool needs
 
   auto func_name = LastTokenValue().as_identifier;
   auto& ident_pos = LastTokenPosition();
-  auto symbol = Symbol::Create(Symbol::Kind::kFunction, scope, func_name, ident_pos);
+  auto symbol = Symbol::Create(Symbol::Kind::kFunc, scope, func_name, ident_pos);
 
   auto func_expr = ParseLambdaExpression(scope, needs_body);
   if (func_expr == nullptr) {
@@ -371,7 +371,7 @@ FunctionExpressionPtr Parser::ParseLambdaExpression(Scope* scope, bool needs_bod
     if (Expect(Token::kIdentifier)) {
       auto param_name = LastTokenValue().as_identifier;
       auto& ident_pos = LastTokenPosition();
-      auto symbol = Symbol::Create(Symbol::Kind::kLetVariable, inner_scope, param_name, ident_pos);
+      auto symbol = Symbol::Create(Symbol::Kind::kLet, inner_scope, param_name, ident_pos);
       auto param = FunctionParam::Create(std::move(symbol));
 
       if (TryConsume(Token::kColon)) {
@@ -537,7 +537,7 @@ StatementPtr Parser::ParseLetStatement(Scope* scope) {
 
   auto var_name = LastTokenValue().as_identifier;
   auto& ident_pos = LastTokenPosition();
-  auto symbol = Symbol::Create(Symbol::Kind::kLetVariable, scope, var_name, ident_pos);
+  auto symbol = Symbol::Create(Symbol::Kind::kLet, scope, var_name, ident_pos);
 
   Expect(Token::kAssign);
   auto expr = ParseExpression(scope);
@@ -563,7 +563,7 @@ StatementPtr Parser::ParseVarStatement(Scope* scope) {
 
   auto var_name = LastTokenValue().as_identifier;
   auto& ident_pos = LastTokenPosition();
-  auto symbol = Symbol::Create(Symbol::Kind::kVarVariable, scope, var_name, ident_pos);
+  auto symbol = Symbol::Create(Symbol::Kind::kVar, scope, var_name, ident_pos);
 
   Expect(Token::kAssign);
   auto expr = ParseExpression(scope);

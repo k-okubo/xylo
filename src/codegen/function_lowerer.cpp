@@ -253,19 +253,19 @@ llvm::Value* FunctionLowerer::BuildIdentifierExpression(IdentifierExpression* ex
   auto symbol = expr->symbol();
 
   switch (symbol->kind()) {
-    case Symbol::Kind::kClass:
+    case Symbol::Kind::kType:
       xylo_unreachable();
       break;
 
-    case Symbol::Kind::kLetVariable:
-    case Symbol::Kind::kVarVariable:
+    case Symbol::Kind::kLet:
+    case Symbol::Kind::kVar:
       if (symbol->is_captured() && symbol->scope()->is_outer_than(xylo_func()->inner_scope())) {
         return BuildOuterEnvIdentifier(expr, out_closure_env);
       } else {
         return BuildLocalValueIdentifier(expr, out_closure_env);
       }
 
-    case Symbol::Kind::kFunction:
+    case Symbol::Kind::kFunc:
       return BuildFunctionIdentifier(expr, out_closure_env);
   }
 
@@ -278,12 +278,12 @@ llvm::Value* FunctionLowerer::BuildOuterEnvIdentifier(IdentifierExpression* expr
   xylo_contract(symbol->is_captured());
 
   switch (symbol->kind()) {
-    case Symbol::Kind::kLetVariable: {
+    case Symbol::Kind::kLet: {
       auto [ptr, type] = LoadOuterEnvironmentValuePtr(symbol);
       return builder_.CreateLoad(type, ptr);
     }
 
-    case Symbol::Kind::kVarVariable: {
+    case Symbol::Kind::kVar: {
       auto [ptr, type] = LoadOuterEnvironmentValuePtr(symbol);
 
       if (expr->is_lvalue()) {
@@ -304,13 +304,13 @@ llvm::Value* FunctionLowerer::BuildLocalValueIdentifier(IdentifierExpression* ex
   auto symbol = expr->symbol();
 
   switch (symbol->kind()) {
-    case Symbol::Kind::kLetVariable: {
+    case Symbol::Kind::kLet: {
       auto it = variable_value_map_.find(symbol);
       xylo_contract(it != variable_value_map_.end());
       return it->second;
     }
 
-    case Symbol::Kind::kVarVariable: {
+    case Symbol::Kind::kVar: {
       auto it = variable_value_map_.find(symbol);
       xylo_contract(it != variable_value_map_.end());
       auto ptr = it->second;

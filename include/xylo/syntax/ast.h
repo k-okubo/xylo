@@ -61,10 +61,10 @@ using FieldEntryPtr = std::unique_ptr<FieldEntry>;
 class Symbol {
  public:
   enum class Kind {
-    kLetVariable,  // immutable
-    kVarVariable,  // mutable
-    kFunction,
-    kClass,
+    kLet,  // immutable
+    kVar,  // mutable
+    kFunc,
+    kType,
   };
 
   static auto Create(Kind kind, Scope* scope, Identifier* name, const SourceRange& position) {

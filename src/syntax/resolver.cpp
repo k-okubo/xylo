@@ -12,7 +12,7 @@ void Resolver::VisitFileAST(FileAST* file_ast, const NameTable* external_name_ta
   Vector<FunctionExpressionPtr> external_functions;
   if (external_name_table != nullptr) {
     for (auto [_, symbol] : external_name_table->entries()) {
-      if (symbol->kind() == Symbol::Kind::kFunction) {
+      if (symbol->kind() == Symbol::Kind::kFunc) {
         auto func = FunctionExpression::Create({}, Block::Create());
         RegisterDecledFunction(symbol, func.get());
         external_functions.push_back(std::move(func));
@@ -165,7 +165,7 @@ void Resolver::VisitEmbeddedClass(EmbeddedClass* embedded, ClassDeclaration* emb
 
   if (symbol == nullptr) {
     ErrorUndeclared(embedded->position(), embedded->name());
-  } else if (symbol->kind() != Symbol::Kind::kClass) {
+  } else if (symbol->kind() != Symbol::Kind::kType) {
     ErrorValueAsType(embedded->position(), symbol);
   } else {
     embedded->set_symbol(symbol);
@@ -183,7 +183,7 @@ void Resolver::VisitSuperType(SuperType* super, ResolutionContext* ctx) {
 
   if (symbol == nullptr) {
     ErrorUndeclared(super->position(), super->name());
-  } else if (symbol->kind() != Symbol::Kind::kClass) {
+  } else if (symbol->kind() != Symbol::Kind::kType) {
     ErrorValueAsType(super->position(), symbol);
   } else {
     super->set_symbol(symbol);
@@ -337,22 +337,22 @@ void Resolver::VisitIdentifierExpression(IdentifierExpression* expr, ResolutionC
 
   if (symbol == nullptr) {
     ErrorUndeclared(expr->position(), expr->name());
-  } else if (symbol->kind() == Symbol::Kind::kClass) {
+  } else if (symbol->kind() == Symbol::Kind::kType) {
     ErrorTypeAsValue(expr->position(), symbol);
   } else {
     // LetVariable or VarVariable or Function
     expr->set_symbol(symbol);
 
     switch (symbol->kind()) {
-      case Symbol::Kind::kClass:
+      case Symbol::Kind::kType:
         break;
 
-      case Symbol::Kind::kLetVariable:
-      case Symbol::Kind::kVarVariable:
+      case Symbol::Kind::kLet:
+      case Symbol::Kind::kVar:
         MarkAsClosureIfNeeded(ctx->enclosure.func, symbol);
         break;
 
-      case Symbol::Kind::kFunction: {
+      case Symbol::Kind::kFunc: {
         auto reference_func = GetFunction(symbol);
         auto enclosing_func = ctx->enclosure.func;
         OnUpdateReferenceScope(reference_func, [=, this](const EntityState& state) {
@@ -452,7 +452,7 @@ void Resolver::VisitConstructExpression(ConstructExpression* expr, ResolutionCon
 
   if (class_symbol == nullptr) {
     ErrorUndeclared(expr->position(), expr->class_name());
-  } else if (class_symbol->kind() != Symbol::Kind::kClass) {
+  } else if (class_symbol->kind() != Symbol::Kind::kType) {
     ErrorValueAsType(expr->position(), class_symbol);
   } else {
     expr->set_class_symbol(class_symbol);
@@ -541,7 +541,7 @@ void Resolver::VisitNamedTypeRepr(NamedTypeRepr* type_repr, ResolutionContext* c
 
   if (symbol == nullptr) {
     ErrorUndeclared(type_repr->position(), type_repr->name());
-  } else if (symbol->kind() != Symbol::Kind::kClass) {
+  } else if (symbol->kind() != Symbol::Kind::kType) {
     ErrorValueAsType(type_repr->position(), symbol);
   } else {
     type_repr->set_symbol(symbol);
@@ -602,7 +602,7 @@ void Resolver::MarkCapturedSymbol(FunctionExpression* func, Symbol* symbol) {
 
 
 ClassDeclaration* Resolver::GetClass(Symbol* symbol) {
-  xylo_contract(symbol->kind() == Symbol::Kind::kClass);
+  xylo_contract(symbol->kind() == Symbol::Kind::kType);
   auto it = class_map_.find(symbol);
   xylo_contract(it != class_map_.end());
   return it->second;
@@ -610,7 +610,7 @@ ClassDeclaration* Resolver::GetClass(Symbol* symbol) {
 
 
 FunctionExpression* Resolver::GetFunction(Symbol* symbol) {
-  xylo_contract(symbol->kind() == Symbol::Kind::kFunction);
+  xylo_contract(symbol->kind() == Symbol::Kind::kFunc);
   auto it = function_map_.find(symbol);
   xylo_contract(it != function_map_.end());
   return it->second;

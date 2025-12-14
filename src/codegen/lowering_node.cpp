@@ -108,7 +108,7 @@ SubstitutionPtr LoweringNode::ExtendSubstitution(Type* callee, const TypeVec& ty
 
 
 FunctionExpression* LoweringNode::GetXyloFunction(Symbol* symbol) {
-  xylo_contract(symbol->kind() == Symbol::Kind::kFunction);
+  xylo_contract(symbol->kind() == Symbol::Kind::kFunc);
 
   // move to symbol declaration scope
   if (this->scope() != symbol->scope()) {
@@ -123,7 +123,7 @@ FunctionExpression* LoweringNode::GetXyloFunction(Symbol* symbol) {
 
 
 llvm::StructType* LoweringNode::GetOrCreateVTableStruct(Symbol* symbol) {
-  xylo_contract(symbol->kind() == Symbol::Kind::kClass);
+  xylo_contract(symbol->kind() == Symbol::Kind::kType);
 
   // move to symbol declaration scope
   if (this->scope() != symbol->scope()) {
@@ -156,7 +156,7 @@ llvm::StructType* LoweringNode::GetOrCreateVTableStruct(Symbol* symbol) {
 
 
 llvm::StructType* LoweringNode::GetOrCreateInstanceStruct(Symbol* symbol) {
-  xylo_contract(symbol->kind() == Symbol::Kind::kClass);
+  xylo_contract(symbol->kind() == Symbol::Kind::kType);
 
   // move to symbol declaration scope
   if (this->scope() != symbol->scope()) {
@@ -220,7 +220,7 @@ llvm::Function* LoweringNode::GetOrBuildFunction(Symbol* symbol, const MetavarVe
 
 
 llvm::Function* LoweringNode::GetOrBuildFunction(Symbol* symbol, const TypeVec& type_args) {
-  xylo_contract(symbol->kind() == Symbol::Kind::kFunction);
+  xylo_contract(symbol->kind() == Symbol::Kind::kFunc);
 
   // move to symbol declaration scope
   if (this->scope() != symbol->scope()) {

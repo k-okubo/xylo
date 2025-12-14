@@ -634,14 +634,14 @@ void Inferencer::VisitIdentifierExpression(IdentifierExpression* expr, Inference
   auto symbol_type = symbol->type();
 
   switch (symbol->kind()) {
-    case Symbol::Kind::kLetVariable:
-    case Symbol::Kind::kVarVariable: {
+    case Symbol::Kind::kLet:
+    case Symbol::Kind::kVar: {
       xylo_contract(symbol_type != nullptr);
       expr->set_type(symbol_type);
       break;
     }
 
-    case Symbol::Kind::kFunction: {
+    case Symbol::Kind::kFunc: {
       auto& state = GetEntityState(expr->symbol());
 
       if (symbol_type == nullptr) {
@@ -1374,7 +1374,7 @@ bool Inferencer::MarkLValue(Expression* expr) {
     case Expression::Kind::kIdentifier: {
       auto ident_expr = expr->As<IdentifierExpression>();
       auto symbol = ident_expr->symbol();
-      if (symbol->kind() == Symbol::Kind::kVarVariable) {
+      if (symbol->kind() == Symbol::Kind::kVar) {
         ident_expr->set_lvalue(true);
         return true;
       } else {

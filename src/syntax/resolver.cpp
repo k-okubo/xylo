@@ -8,18 +8,6 @@ void Resolver::VisitFileAST(FileAST* file_ast, const NameTable* external_name_ta
   NameTable global_table(external_name_table);
   ResolutionContext global_ctx = {&global_table, {nullptr, nullptr, nullptr}};
 
-  // TODO: handle external functions
-  Vector<FunctionExpressionPtr> external_functions;
-  if (external_name_table != nullptr) {
-    for (auto [_, symbol] : external_name_table->entries()) {
-      if (symbol->kind() == Symbol::Kind::kFunc) {
-        auto func = FunctionExpression::Create({}, Block::Create());
-        RegisterDecledFunction(symbol, func.get());
-        external_functions.push_back(std::move(func));
-      }
-    }
-  }
-
   // TODO: primitive types
   auto insert_global = [&](Symbol* symbol) {
     global_table.Insert(symbol->name(), symbol);
@@ -170,10 +158,12 @@ void Resolver::VisitEmbeddedClass(EmbeddedClass* embedded, ClassDeclaration* emb
   } else {
     embedded->set_symbol(symbol);
 
-    auto embedded_decl = GetClass(symbol);
-    OnUpdateReferenceScope(embedded_decl, [=, this](const EntityState& state) {
-      MarkAsClosureIfNeeded(embedding, state.reference_scope);
-    });
+    if (symbol->scope() != context_->root_scope()) {
+      auto embedded_decl = GetClass(symbol);
+      OnUpdateReferenceScope(embedded_decl, [=, this](const EntityState& state) {
+        MarkAsClosureIfNeeded(embedding, state.reference_scope);
+      });
+    }
   }
 }
 
@@ -353,13 +343,15 @@ void Resolver::VisitIdentifierExpression(IdentifierExpression* expr, ResolutionC
         break;
 
       case Symbol::Kind::kFunc: {
-        auto reference_func = GetFunction(symbol);
-        auto enclosing_func = ctx->enclosure.func;
-        OnUpdateReferenceScope(reference_func, [=, this](const EntityState& state) {
-          if (reference_func->is_closure()) {
-            MarkAsClosureIfNeeded(enclosing_func, symbol);
-          }
-        });
+        if (symbol->scope() != context_->root_scope()) {
+          auto reference_func = GetFunction(symbol);
+          auto enclosing_func = ctx->enclosure.func;
+          OnUpdateReferenceScope(reference_func, [=, this](const EntityState& state) {
+            if (reference_func->is_closure()) {
+              MarkAsClosureIfNeeded(enclosing_func, symbol);
+            }
+          });
+        }
         break;
       }
     }
@@ -457,13 +449,15 @@ void Resolver::VisitConstructExpression(ConstructExpression* expr, ResolutionCon
   } else {
     expr->set_class_symbol(class_symbol);
 
-    auto class_decl = GetClass(class_symbol);
-    auto enclosing_func = ctx->enclosure.func;
-    OnUpdateReferenceScope(class_decl, [=, this](const EntityState& state) {
-      if (class_decl->is_closure()) {
-        MarkAsClosureIfNeeded(enclosing_func, class_decl->symbol());
-      }
-    });
+    if (class_symbol->scope() != context_->root_scope()) {
+      auto class_decl = GetClass(class_symbol);
+      auto enclosing_func = ctx->enclosure.func;
+      OnUpdateReferenceScope(class_decl, [=, this](const EntityState& state) {
+        if (class_decl->is_closure()) {
+          MarkAsClosureIfNeeded(enclosing_func, class_decl->symbol());
+        }
+      });
+    }
   }
 
   VisitObjectInitializer(expr->initializer(), ctx);

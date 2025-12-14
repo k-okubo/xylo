@@ -1539,6 +1539,26 @@ TEST(InferencerTest, NewObject_IncompatibleType) {
 }
 
 
+TEST(InferencerTest, NewObject_NonClass) {
+  auto source = R"(
+    def main() {
+      let p = new int{}
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'int' cannot be instantiated");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 19);
+}
+
+
 TEST(InferencerTest, SetterFunction) {
   auto source = R"(
     class Foo { a: int }
@@ -2596,6 +2616,30 @@ TEST(InferencerTest, Embedding_MissingInitializer) {
 }
 
 
+TEST(InferencerTest, Embedding_NonClass) {
+  auto source = R"(
+    class Foo {
+      embed int
+    }
+
+    def main() {
+      let foo = new Foo{}
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'int' cannot be embedded");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 13);
+}
+
+
 TEST(InferencerTest, Interface_Basic) {
   auto source = R"(
     def main() {
@@ -2782,6 +2826,25 @@ TEST(InferencerTest, Interface_AmbiguousMethod) {
 
   EXPECT_EQ(inferencer.diagnostics()[1].message, "candidates are from interfaces 'A' and 'B'");
   EXPECT_EQ(inferencer.diagnostics()[1].severity, DiagnosticSeverity::kNote);
+}
+
+
+TEST(InferencerTest, Inherit_NonInterface) {
+  auto source = R"(
+    class Foo : int {
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'int' cannot be inherited from");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 2);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 17);
 }
 
 

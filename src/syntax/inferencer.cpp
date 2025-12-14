@@ -183,6 +183,12 @@ void Inferencer::RegisterSuperTypes(NominalType* nominal_type, const Vector<Supe
   for (auto& super : super_types) {
     auto super_symbol = super->symbol();
     xylo_contract(super_symbol->type() != nullptr);
+    auto super_nominal = super_symbol->type()->As<NominalType>();
+
+    if (super_nominal->category() != NominalType::Category::kInterface) {
+      ReportError(super->position(), "type '" + super_nominal->name()->str().cpp_str() + "' cannot be inherited from");
+      continue;
+    }
 
     auto& state = GetEntityState(super_symbol);
     if (!state.done) {
@@ -194,7 +200,6 @@ void Inferencer::RegisterSuperTypes(NominalType* nominal_type, const Vector<Supe
       }
     }
 
-    auto super_nominal = super_symbol->type()->As<NominalType>();
     xylo_check(nominal_type->AddSuper(super_nominal));
   }
 }
@@ -204,6 +209,12 @@ void Inferencer::RegisterEmbeddeds(NominalType* nominal_type, const Vector<Embed
   for (auto& embedded : embeddeds) {
     auto embedded_symbol = embedded->symbol();
     xylo_contract(embedded_symbol->type() != nullptr);
+    auto embedded_nominal = embedded_symbol->type()->As<NominalType>();
+
+    if (embedded_nominal->category() != NominalType::Category::kClass) {
+      ReportError(embedded->position(), "type '" + embedded_nominal->name()->str().cpp_str() + "' cannot be embedded");
+      continue;
+    }
 
     auto& state = GetEntityState(embedded_symbol);
     if (!state.done) {
@@ -215,7 +226,6 @@ void Inferencer::RegisterEmbeddeds(NominalType* nominal_type, const Vector<Embed
       }
     }
 
-    auto embedded_nominal = embedded_symbol->type()->As<NominalType>();
     xylo_check(nominal_type->AddEmbedded(embedded->name(), embedded_nominal));
   }
 }
@@ -1098,6 +1108,14 @@ void Inferencer::VisitConstructExpression(ConstructExpression* expr, InferenceCo
   auto class_type = symbol->type();
   xylo_contract(class_type != nullptr);
   xylo_contract(class_type->kind() == Type::Kind::kNominal);
+
+  auto class_nominal = class_type->As<NominalType>();
+  if (class_nominal->category() != NominalType::Category::kClass) {
+    ReportError(expr->position(), "type '" + class_nominal->name()->str().cpp_str() + "' cannot be instantiated");
+    expr->set_type(context_->error_type());
+    return;
+  }
+
   expr->set_type(class_type);
 
   VariableContext var_ctx{

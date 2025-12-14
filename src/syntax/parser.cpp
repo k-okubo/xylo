@@ -181,7 +181,7 @@ DeclarationPtr Parser::ParseInterfaceDeclaration(Scope* scope) {
   auto inner_scope = scope->CreateChild();
 
   if (PeekAhead() == Token::kColon) {
-    interface->set_supers(ParseSuperClasses(scope));
+    interface->set_supers(ParseSuperTypes(scope));
   }
 
   if (!Expect(Token::kLBrace)) {
@@ -224,7 +224,7 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
   auto inner_scope = scope->CreateChild();
 
   if (PeekAhead() == Token::kColon) {
-    clazz->set_supers(ParseSuperClasses(scope));
+    clazz->set_supers(ParseSuperTypes(scope));
   }
 
   if (!Expect(Token::kLBrace)) {
@@ -300,9 +300,9 @@ EmbeddedClassPtr Parser::ParseEmbeddedClass(Scope* scope) {
 }
 
 
-Vector<SuperClassPtr> Parser::ParseSuperClasses(Scope* scope) {
+Vector<SuperTypePtr> Parser::ParseSuperTypes(Scope* scope) {
   Expect(Token::kColon);
-  Vector<SuperClassPtr> supers;
+  Vector<SuperTypePtr> supers;
 
   bool first = true;
   while (PeekAhead() == Token::kIdentifier || PeekAhead() == Token::kComma) {
@@ -314,7 +314,7 @@ Vector<SuperClassPtr> Parser::ParseSuperClasses(Scope* scope) {
     if (Expect(Token::kIdentifier)) {
       auto super_name = LastTokenValue().as_identifier;
       auto& ident_pos = LastTokenPosition();
-      auto super = SuperClass::Create(super_name);
+      auto super = SuperType::Create(super_name);
       super->set_position(ident_pos);
       supers.push_back(std::move(super));
     } else {

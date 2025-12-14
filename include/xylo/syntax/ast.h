@@ -30,7 +30,7 @@ class TupleTypeRepr;
 
 class ClassField;
 class EmbeddedClass;
-class SuperClass;
+class SuperType;
 class FunctionParam;
 class Initializer;
 class ObjectInitializer;
@@ -51,7 +51,7 @@ using TupleTypeReprPtr = std::unique_ptr<TupleTypeRepr>;
 
 using ClassFieldPtr = std::unique_ptr<ClassField>;
 using EmbeddedClassPtr = std::unique_ptr<EmbeddedClass>;
-using SuperClassPtr = std::unique_ptr<SuperClass>;
+using SuperTypePtr = std::unique_ptr<SuperType>;
 using FunctionParamPtr = std::unique_ptr<FunctionParam>;
 using InitializerPtr = std::unique_ptr<Initializer>;
 using ObjectInitializerPtr = std::unique_ptr<ObjectInitializer>;
@@ -203,13 +203,13 @@ class InterfaceDeclaration : public Declaration {
   const Vector<FunctionDeclarationPtr>& methods() const { return methods_; }
   void add_method(FunctionDeclarationPtr&& method) { methods_.push_back(std::move(method)); }
 
-  const Vector<SuperClassPtr>& supers() const { return supers_; }
-  void set_supers(Vector<SuperClassPtr>&& supers) { supers_ = std::move(supers); }
+  const Vector<SuperTypePtr>& supers() const { return supers_; }
+  void set_supers(Vector<SuperTypePtr>&& supers) { supers_ = std::move(supers); }
 
  private:
   Scope* inner_scope_;
   Vector<FunctionDeclarationPtr> methods_;
-  Vector<SuperClassPtr> supers_;
+  Vector<SuperTypePtr> supers_;
 };
 
 
@@ -243,8 +243,8 @@ class ClassDeclaration : public Declaration {
   const Vector<EmbeddedClassPtr>& embeddeds() const { return embeddeds_; }
   void add_embedded(EmbeddedClassPtr&& embedded) { embeddeds_.push_back(std::move(embedded)); }
 
-  const Vector<SuperClassPtr>& supers() const { return supers_; }
-  void set_supers(Vector<SuperClassPtr>&& supers) { supers_ = std::move(supers); }
+  const Vector<SuperTypePtr>& supers() const { return supers_; }
+  void set_supers(Vector<SuperTypePtr>&& supers) { supers_ = std::move(supers); }
 
   bool is_closure() const { return closure_; }
   void set_closure(bool closure) { closure_ = closure; }
@@ -254,7 +254,7 @@ class ClassDeclaration : public Declaration {
   Vector<ClassFieldPtr> fields_;
   Vector<DeclarationPtr> declarations_;
   Vector<EmbeddedClassPtr> embeddeds_;
-  Vector<SuperClassPtr> supers_;
+  Vector<SuperTypePtr> supers_;
   bool closure_;
 };
 
@@ -312,15 +312,15 @@ class EmbeddedClass {
 };
 
 
-class SuperClass {
+class SuperType {
  public:
   static auto Create(Identifier* name) {
-    auto p = new SuperClass(name);
-    return std::unique_ptr<SuperClass>(p);
+    auto p = new SuperType(name);
+    return std::unique_ptr<SuperType>(p);
   }
 
  protected:
-  explicit SuperClass(Identifier* name) :
+  explicit SuperType(Identifier* name) :
       name_(name),
       position_(),
       symbol_(nullptr) {}

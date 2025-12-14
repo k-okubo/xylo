@@ -86,7 +86,7 @@ class Resolver : public DiagnosticReporter {
   void VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* ctx);
   void VisitClassField(ClassField* field, ResolutionContext* ctx);
   void VisitEmbeddedClass(EmbeddedClass* embedded, ClassDeclaration* embedding, ResolutionContext* ctx);
-  void VisitSuperClass(SuperClass* super, ResolutionContext* ctx);
+  void VisitSuperType(SuperType* super, ResolutionContext* ctx);
   void VisitFunctionDeclaration(FunctionDeclaration* decl, ResolutionContext* ctx);
 
   void VisitBlock(Block* block, ResolutionContext* ctx);

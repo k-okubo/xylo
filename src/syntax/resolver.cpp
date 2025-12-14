@@ -88,7 +88,7 @@ void Resolver::VisitDeclaration(Declaration* decl, ResolutionContext* ctx) {
 
 void Resolver::VisitInterfaceDeclaration(InterfaceDeclaration* decl, ResolutionContext* ctx) {
   for (auto& super : decl->supers()) {
-    VisitSuperClass(super.get(), ctx);
+    VisitSuperType(super.get(), ctx);
   }
 
   NameTable local_table(ctx->name_table);
@@ -107,7 +107,7 @@ void Resolver::VisitInterfaceDeclaration(InterfaceDeclaration* decl, ResolutionC
 
 void Resolver::VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* ctx) {
   for (auto& super : decl->supers()) {
-    VisitSuperClass(super.get(), ctx);
+    VisitSuperType(super.get(), ctx);
   }
 
   for (auto& embedded : decl->embeddeds()) {
@@ -178,7 +178,7 @@ void Resolver::VisitEmbeddedClass(EmbeddedClass* embedded, ClassDeclaration* emb
 }
 
 
-void Resolver::VisitSuperClass(SuperClass* super, ResolutionContext* ctx) {
+void Resolver::VisitSuperType(SuperType* super, ResolutionContext* ctx) {
   auto symbol = ctx->name_table->Lookup(super->name());
 
   if (symbol == nullptr) {

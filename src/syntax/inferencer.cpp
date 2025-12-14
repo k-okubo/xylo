@@ -96,7 +96,7 @@ void Inferencer::PreVisitInterfaceDeclaration(InterfaceDeclaration* decl) {
   xylo_contract(decl->symbol()->type() != nullptr);
   auto interface_type = decl->symbol()->type()->As<NominalType>();
 
-  RegisterSupertypes(interface_type, decl->supers());
+  RegisterSuperTypes(interface_type, decl->supers());
 
   for (auto& method_decl : decl->methods()) {
     RegisterMethod(interface_type, method_decl.get());
@@ -125,7 +125,7 @@ void Inferencer::PreVisitClassDeclaration(ClassDeclaration* decl) {
   xylo_contract(decl->symbol()->type() != nullptr);
   auto class_type = decl->symbol()->type()->As<NominalType>();
 
-  RegisterSupertypes(class_type, decl->supers());
+  RegisterSuperTypes(class_type, decl->supers());
   RegisterEmbeddeds(class_type, decl->embeddeds());
   RegisterFields(class_type, decl->fields());
 
@@ -179,8 +179,8 @@ void Inferencer::PreVisitFunctionDeclaration(FunctionDeclaration* decl) {
 }
 
 
-void Inferencer::RegisterSupertypes(NominalType* nominal_type, const Vector<SuperClassPtr>& super_classes) {
-  for (auto& super : super_classes) {
+void Inferencer::RegisterSuperTypes(NominalType* nominal_type, const Vector<SuperTypePtr>& super_types) {
+  for (auto& super : super_types) {
     auto super_symbol = super->symbol();
     xylo_contract(super_symbol->type() != nullptr);
 

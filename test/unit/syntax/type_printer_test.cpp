@@ -7,11 +7,13 @@ namespace xylo {
 
 
 TEST(TypePrinterTest, VarName) {
+  Scope scope;
+
   int n = 21;
   auto types = new Type*[n];
 
   for (int i = 0; i < n; ++i) {
-    types[i] = new TypeVariable(0);
+    types[i] = new TypeVariable(&scope);
   }
   for (int i = 0; i < n - 1; ++i) {
     types[i]->ConstrainSubtypeOf(types[i + 1]);

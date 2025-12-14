@@ -424,7 +424,6 @@ void Inferencer::VisitFunctionDeclaration(FunctionDeclaration* decl) {
   auto scope = decl->func()->inner_scope();
   auto func_type = decl->func()->type();
   func_type = func_type->CloseOverMetavars(scope, decl->func()->arena());
-  func_type->PruneInnerScopeVars(scope);
   decl->func()->set_type(func_type);
 
   // generalize function type and re-set it to symbol

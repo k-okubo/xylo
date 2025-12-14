@@ -130,7 +130,6 @@ class Type : public Downcastable {
   }
   virtual Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) = 0;
 
-  void PruneInnerScopeVars(Scope* scope);
   Type* Generalize(Scope* scope, TypeArena* arena);
   virtual Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* subst = nullptr) const;
 
@@ -570,7 +569,6 @@ class TypeVariable : public Type {
   bool is_var_type() const override { return true; }
 
   Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
-  void PruneInnerScopeVars();
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  protected:

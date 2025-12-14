@@ -1527,7 +1527,7 @@ TEST(TypeTest, MemberConstraint_FromTyvar) {
   dog_type->AddSuper(animal_type);
 
   // Dog <: tyvar
-  auto tyvar = new TypeVariable(0);
+  auto tyvar = new TypeVariable(types.context()->root_scope());
   EXPECT_TRUE(dog_type->ConstrainSubtypeOf(tyvar));
 
   // has member

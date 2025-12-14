@@ -1076,6 +1076,17 @@ bool VariableBase::ConstrainUpperBoundForFunc(Type* new_ub, TypePairSet* visited
 
 
 bool VariableBase::ConstrainUpperBoundForAtom(Type* new_ub, TypePairSet* visited) {
+  // does not have references to TypeVariables from inner scopes
+  if (owner_->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kTyvar) {
+    auto owner_tyvar = owner_->As<TypeVariable>();
+    auto ub_tyvar = new_ub->As<TypeVariable>();
+
+    if (ub_tyvar->scope()->is_inner_than(owner_tyvar->scope())) {
+      return true;
+    }
+  }
+
+  // change type variables in MemberConstraint to outer type variables
   if (owner_->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kMemberConstraint) {
     auto owner_tyvar = owner_->As<TypeVariable>();
     auto ub_memcon = new_ub->As<MemberConstraint>();
@@ -1154,6 +1165,16 @@ bool VariableBase::ConstrainLowerBoundForFunc(Type* new_lb, TypePairSet* visited
 
 
 bool VariableBase::ConstrainLowerBoundForAtom(Type* new_lb, TypePairSet* visited) {
+  // does not have references to TypeVariables from inner scopes
+  if (owner_->kind() == Type::Kind::kTyvar && new_lb->kind() == Type::Kind::kTyvar) {
+    auto owner_tyvar = owner_->As<TypeVariable>();
+    auto lb_tyvar = new_lb->As<TypeVariable>();
+
+    if (lb_tyvar->scope()->is_inner_than(owner_tyvar->scope())) {
+      return true;
+    }
+  }
+
   // Add new_lb's ancestors to the upper bound to enable sibling checking for types added to lb in the future.
   auto ancestors = std::make_unique<UnionType>();
   CollectTopAncestors(new_lb, ancestors.get());
@@ -1462,99 +1483,6 @@ void Substitution::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMet
   for (auto& [param, arg] : entries_) {
     arg = arg->CloseOverMetavars(scope, arena, map);
   }
-}
-
-
-void Type::PruneInnerScopeVars(Scope* scope) {
-  switch (kind()) {
-    case Type::Kind::kError:
-      return;
-
-    case Type::Kind::kNominal:
-      return;
-
-    case Type::Kind::kMemberConstraint:
-      return;
-
-    case Type::Kind::kFunction: {
-      auto func = As<FunctionType>();
-      func->params_type()->PruneInnerScopeVars(scope);
-      func->return_type()->PruneInnerScopeVars(scope);
-      return;
-    }
-
-    case Type::Kind::kTuple: {
-      auto tuple = As<TupleType>();
-      for (auto elem : tuple->elements()) {
-        elem->PruneInnerScopeVars(scope);
-      }
-      return;
-    }
-
-    case Type::Kind::kIntersection: {
-      auto inter = As<IntersectionType>();
-      for (auto elem : inter->elements()) {
-        elem->PruneInnerScopeVars(scope);
-      }
-      return;
-    }
-
-    case Type::Kind::kUnion: {
-      auto uni = As<UnionType>();
-      for (auto elem : uni->elements()) {
-        elem->PruneInnerScopeVars(scope);
-      }
-      return;
-    }
-
-    case Type::Kind::kTyvar: {
-      auto tyvar = As<TypeVariable>();
-      if (tyvar->scope() == scope) {
-        tyvar->PruneInnerScopeVars();
-      }
-      return;
-    }
-
-    case Type::Kind::kMetavar:
-      return;
-
-    case Type::Kind::kScheme:
-      return;
-
-    case Type::Kind::kApplication:
-      return;
-  }
-}
-
-
-void TypeVariable::PruneInnerScopeVars() {
-  auto new_upper_bound = std::make_unique<IntersectionType>();
-  auto new_lower_bound = std::make_unique<UnionType>();
-
-  for (auto ub : upper_bound()->elements()) {
-    if (ub->kind() == Type::Kind::kTyvar) {
-      auto ub_tyvar = ub->As<TypeVariable>();
-      if (ub_tyvar->scope()->is_inner_than(this->scope())) {
-        continue;
-      }
-      xylo_contract(ub_tyvar->scope()->is_outer_than_equal(this->scope()));
-    }
-    new_upper_bound->add_element(ub);
-  }
-
-  for (auto lb : lower_bound()->elements()) {
-    if (lb->kind() == Type::Kind::kTyvar) {
-      auto lb_tyvar = lb->As<TypeVariable>();
-      if (lb_tyvar->scope()->is_inner_than(this->scope())) {
-        continue;
-      }
-      xylo_contract(lb_tyvar->scope()->is_outer_than_equal(this->scope()));
-    }
-    new_lower_bound->add_element(lb);
-  }
-
-  varbase_.set_upper_bound(std::move(new_upper_bound));
-  varbase_.set_lower_bound(std::move(new_lower_bound));
 }
 
 

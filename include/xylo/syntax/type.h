@@ -63,6 +63,12 @@ class TypeArena {
 };
 
 
+struct InstantiatedInfo {
+  Vector<TypeMetavar*> vars;
+};
+using InstantiatedInfoPtr = std::unique_ptr<InstantiatedInfo>;
+
+
 class Type : public Downcastable {
  public:
   enum class Kind {
@@ -82,6 +88,8 @@ class Type : public Downcastable {
  protected:
   explicit Type(Kind kind) :
       kind_(kind),
+      instantiated_info_(nullptr),
+      instantiated_ref_(nullptr),
       arena_() {}
 
  public:
@@ -131,13 +139,25 @@ class Type : public Downcastable {
   virtual Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) = 0;
 
   Type* Generalize(Scope* scope, TypeArena* arena);
-  virtual Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* subst = nullptr) const;
+  virtual Type* Instantiate(TypeArena* arena, Substitution* subst = nullptr) const;
+
+  const InstantiatedInfo* instantiated_info() const { return instantiated_ref_; }
+  void set_instantiated_info(InstantiatedInfoPtr&& info) {
+    instantiated_ref_ = info.get();
+    instantiated_info_ = std::move(info);
+  }
+  void set_instantiated_info(const InstantiatedInfo* info) {
+    instantiated_ref_ = info;
+    instantiated_info_.reset();
+  }
 
   virtual Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) = 0;
   bool is_monotype() const;
 
  private:
   Kind kind_;
+  InstantiatedInfoPtr instantiated_info_;
+  const InstantiatedInfo* instantiated_ref_;
   TypeArena arena_;
 };
 
@@ -316,8 +336,7 @@ class MemberConstraint : public Type {
       mutable_(false),
       on_error_(nullptr),
       resolved_in_(nullptr),
-      resolved_member_(nullptr),
-      instantiated_vars_() {}
+      resolved_member_(nullptr) {}
 
   Identifier* member_name() const { return member_name_; }
 
@@ -337,9 +356,6 @@ class MemberConstraint : public Type {
 
   MemberInfo* resolved_member() const { return resolved_member_; }
   void set_resolved_member(MemberInfo* resolved_member) { resolved_member_ = resolved_member; }
-
-  const Vector<TypeMetavar*>& instantiated_vars() const { return instantiated_vars_; }
-  void set_instantiated_vars(Vector<TypeMetavar*>&& vars) { instantiated_vars_ = std::move(vars); }
 
   bool equals(const Type* other) const override;
   bool is_atomic_type() const override { return true; }
@@ -367,7 +383,6 @@ class MemberConstraint : public Type {
 
   NominalType* resolved_in_;
   MemberInfo* resolved_member_;
-  Vector<TypeMetavar*> instantiated_vars_;
 };
 
 
@@ -620,7 +635,7 @@ class TypeScheme : public Type {
   bool equals(const Type* other) const override;
 
   Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
-  Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* subst = nullptr) const override;
+  Type* Instantiate(TypeArena* arena, Substitution* subst = nullptr) const override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
@@ -642,7 +657,7 @@ class TypeApplication : public Type {
   bool equals(const Type* other) const override;
 
   Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
-  Type* Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* subst = nullptr) const override;
+  Type* Instantiate(TypeArena* arena, Substitution* subst = nullptr) const override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:

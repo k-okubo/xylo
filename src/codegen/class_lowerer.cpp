@@ -138,10 +138,10 @@ llvm::Function* ClassLowerer::CreateVTableEntry(MemberInfo* super_method) {
 
   // get method func
   TypeArena arena;
-  Vector<TypeMetavar*> instantiated_vars;
-  auto instantiated_method_type = method_type->Instantiate(&arena, &instantiated_vars);
+  auto instantiated_method_type = method_type->Instantiate(&arena);
   xylo_check(instantiated_method_type->ConstrainSubtypeOf(super_method_type));
-  auto method_func = LoweringNode::GetOrBuildMethod(method_info->owner(), method_name, instantiated_vars);
+  auto instantiated_info = instantiated_method_type->instantiated_info();
+  auto method_func = LoweringNode::GetOrBuildMethod(method_info->owner(), method_name, instantiated_info);
   auto zonked_method_type = instantiated_method_type->Zonk(subst(), false, &arena)->As<FunctionType>();
 
   if (method_info->owner() == xylo_nominal() && zonked_method_type->equals(super_method_type)) {

@@ -354,7 +354,7 @@ llvm::Value* FunctionLowerer::BuildLocalValueIdentifier(IdentifierExpression* ex
 
 llvm::Value* FunctionLowerer::BuildFunctionIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env) {
   auto symbol = expr->symbol();
-  auto llvm_func = LoweringNode::GetOrBuildFunction(symbol, expr->instantiated_vars());
+  auto llvm_func = LoweringNode::GetOrBuildFunction(symbol, expr->type()->instantiated_info());
   auto xylo_func = GetXyloFunction(symbol);
 
   return ReturnFunction(llvm_func, out_closure_env, xylo_func->is_closure(), [this, symbol]() {
@@ -885,8 +885,9 @@ llvm::Value* FunctionLowerer::BuildClassSelect(SelectExpression* expr, NominalTy
       return bu.MemberPtr(instance_struct, object_ptr, member_path);
 
     case MemberInfo::Kind::kMethod: {
-      auto& type_args = expr->member_constraint()->instantiated_vars();
-      auto llvm_func = GetOrBuildMethod(member_info->owner(), expr->member_name(), type_args);
+      TypeArena arena;
+      auto instantiated_info = expr->type()->Zonk(subst(), false, &arena)->instantiated_info();
+      auto llvm_func = GetOrBuildMethod(member_info->owner(), expr->member_name(), instantiated_info);
 
       // load method's owner pointer
       object_ptr = bu.MemberPtr(instance_struct, object_ptr, member_path, 1);  // skip method slot

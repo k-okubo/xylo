@@ -90,8 +90,12 @@ class LoweringNode {
 
   llvm::StructType* GetOrCreateVTableStruct(Symbol* symbol);
   llvm::StructType* GetOrCreateInstanceStruct(Symbol* symbol);
+
+  llvm::Function* GetOrBuildMethod(NominalType* type, Identifier* name, const InstantiatedInfo* instantiated_info);
   llvm::Function* GetOrBuildMethod(NominalType* type, Identifier* name, const MetavarVec& type_args);
   llvm::Function* GetOrBuildMethod(NominalType* type, Identifier* name, const TypeVec& type_args);
+
+  llvm::Function* GetOrBuildFunction(Symbol* symbol, const InstantiatedInfo* instantiated_info);
   llvm::Function* GetOrBuildFunction(Symbol* symbol, const MetavarVec& type_args);
   llvm::Function* GetOrBuildFunction(Symbol* symbol, const TypeVec& type_args);
 

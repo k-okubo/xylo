@@ -706,8 +706,7 @@ bool MemberConstraint::CanResolve(const NominalType* nominal, TypePairSet* visit
   }
 
   TypeArena arena;
-  Vector<TypeMetavar*> instantiated_vars;
-  Type* member_type = member_info->type()->Instantiate(&arena, &instantiated_vars);
+  Type* member_type = member_info->type()->Instantiate(&arena);
 
   if (!member_type->CanConstrainSubtypeOf(expected_type(), visited)) {
     CallbackOnError(owner);
@@ -729,8 +728,7 @@ bool MemberConstraint::Resolve(NominalType* nominal, TypePairSet* visited) {
   }
 
   TypeArena arena;
-  Vector<TypeMetavar*> instantiated_vars;
-  Type* member_type = member_info->type()->Instantiate(&arena, &instantiated_vars);
+  Type* member_type = member_info->type()->Instantiate(&arena);
 
   if (!member_type->ConstrainSameAs(expected_type())) {
     CallbackOnError(owner);
@@ -739,7 +737,6 @@ bool MemberConstraint::Resolve(NominalType* nominal, TypePairSet* visited) {
 
   set_resolved_in(owner);
   set_resolved_member(member_info);
-  set_instantiated_vars(std::move(instantiated_vars));
   this->arena()->merge(&arena);
 
   return true;
@@ -1069,6 +1066,11 @@ bool VariableBase::ConstrainLowerBound(Type* new_lb, TypePairSet* visited) {
   xylo_contract(new_lb->kind() != Type::Kind::kUnion);
   xylo_contract(new_lb->kind() != Type::Kind::kScheme);
   xylo_contract(!(this->kind() == Type::Kind::kTyvar && new_lb->kind() == Type::Kind::kMetavar));
+
+  if (new_lb->instantiated_info() != nullptr) {
+    xylo_contract(instantiated_info() == nullptr);
+    set_instantiated_info(new_lb->instantiated_info());
+  }
 
   if (new_lb->kind() == Type::Kind::kFunction) {
     // already constrained
@@ -1648,18 +1650,20 @@ static void NormalizeLowerBound(UnionType* lower_bound, Type* lb) {
 }
 
 
-Type* Type::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* parent) const {
+Type* Type::Instantiate(TypeArena* arena, Substitution* parent) const {
   return const_cast<Type*>(this);
 }
 
 
-Type* TypeScheme::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* parent) const {
+Type* TypeScheme::Instantiate(TypeArena* arena, Substitution* parent) const {
+  InstantiatedInfoPtr instantiated_info = std::make_unique<InstantiatedInfo>();
+
   // prepare subst: scheme->vars() => fresh metavars
   Substitution subst(parent);
   for (auto tyvar : this->vars()) {
     auto metavar = new TypeMetavar();
     xylo_check(subst.Insert(tyvar, metavar));
-    out_vars->push_back(metavar);
+    instantiated_info->vars.push_back(metavar);
     arena->adopt_type(TypePtr(metavar));
   }
 
@@ -1690,18 +1694,20 @@ Type* TypeScheme::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, 
     }
   }
 
-  return subst.Apply(this->body(), arena);
+  auto result = subst.Apply(this->body(), arena);
+  result->set_instantiated_info(std::move(instantiated_info));
+  return result;
 }
 
 
-Type* TypeApplication::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, Substitution* parent) const {
+Type* TypeApplication::Instantiate(TypeArena* arena, Substitution* parent) const {
   xylo_contract(substitution()->parent() == nullptr);
   substitution()->set_parent(parent);
   Finally _([this]() {
     substitution()->set_parent(nullptr);
   });
 
-  return target()->Instantiate(arena, out_vars, substitution());
+  return target()->Instantiate(arena, substitution());
 }
 
 
@@ -1930,9 +1936,7 @@ Type* TypeVariable::Zonk(const Substitution* subst, bool strict, TypeArena* aren
 
 
 Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
-  if (func_shape() != nullptr) {
-    return func_shape()->Zonk(subst, strict, arena);
-  }
+  auto instantiated_info = this->instantiated_info();
 
   UnionType atoms;
   UnionType result;
@@ -1949,6 +1953,10 @@ Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeArena* arena
         } else {
           atoms.add_element(zonked);
         }
+        if (zonked->instantiated_info() != nullptr) {
+          xylo_contract(instantiated_info == nullptr);
+          instantiated_info = zonked->instantiated_info();
+        }
         break;
       }
 
@@ -1958,6 +1966,12 @@ Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeArena* arena
       default:
         xylo_unreachable();
     }
+  }
+
+  if (func_shape() != nullptr) {
+    auto result = func_shape()->Zonk(subst, strict, arena);
+    result->set_instantiated_info(instantiated_info);
+    return result;
   }
 
   atoms.ShrinkToUpper();

@@ -363,6 +363,39 @@ TEST(ClassTest, MethodCallInPolymorphicFunc) {
 }
 
 
+TEST(ClassTest, PolymorphicMethodCallInPolymorphicFunc) {
+  auto source = R"(
+    class Doubler {
+      def transform(x) {
+        return x * 2
+      }
+    }
+
+    class Identity {
+      def transform(x) {
+        return x
+      }
+    }
+
+    def main() {
+      let doubler = new Doubler{}
+      let identity = new Identity{}
+      let value1 = transform(doubler, 21)
+      let value2 = transform(identity, true)
+      let check = value1 == 42 && value2
+      return check ? 1 : 0
+    }
+
+    def transform(f, x) {
+      return f.transform(x)
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
 TEST(ClassTest, RecursiveMethod) {
   auto source = R"(
     class Factorial {

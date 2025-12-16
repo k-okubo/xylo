@@ -352,8 +352,7 @@ void Inferencer::CheckOverrides(NominalType* nominal_type, const ClassDeclareInf
     // compatible type?
     {
       TypeArena arena;
-      Vector<TypeMetavar*> vars;
-      auto member_type = member->type()->Instantiate(&arena, &vars);
+      auto member_type = member->type()->Instantiate(&arena);
 
       if (!member_type->ConstrainSubtypeOf(super_method->type())) {
         report_incompatible_override(method_name, base_owner_name);
@@ -660,10 +659,7 @@ void Inferencer::VisitIdentifierExpression(IdentifierExpression* expr, Inference
         xylo_contract(symbol_type != nullptr);
       }
 
-      Vector<TypeMetavar*> instantiated_vars;
-      auto expr_type = symbol_type->Instantiate(expr->arena(), &instantiated_vars);
-      expr->set_type(expr_type);
-      expr->set_instantiated_vars(std::move(instantiated_vars));
+      expr->set_type(symbol_type->Instantiate(expr->arena()));
       break;
     }
 

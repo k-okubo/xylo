@@ -188,6 +188,16 @@ llvm::StructType* LoweringNode::GetOrCreateInstanceStruct(Symbol* symbol) {
 }
 
 
+llvm::Function* LoweringNode::GetOrBuildMethod(NominalType* type, Identifier* name,
+                                               const InstantiatedInfo* instantiated_info) {
+  if (instantiated_info) {
+    return GetOrBuildMethod(type, name, instantiated_info->vars);
+  } else {
+    return GetOrBuildMethod(type, name, TypeVec{});
+  }
+}
+
+
 llvm::Function* LoweringNode::GetOrBuildMethod(NominalType* type, Identifier* name, const MetavarVec& type_args) {
   TypeArena arena;
   TypeVec concrete_type_args;
@@ -203,6 +213,15 @@ llvm::Function* LoweringNode::GetOrBuildMethod(NominalType* type, Identifier* na
 
 llvm::Function* LoweringNode::GetOrBuildMethod(NominalType* type, Identifier* name, const TypeVec& type_args) {
   return GetClassLowerer(type, subst())->GetOrBuildMethod(name, type_args);
+}
+
+
+llvm::Function* LoweringNode::GetOrBuildFunction(Symbol* symbol, const InstantiatedInfo* instantiated_info) {
+  if (instantiated_info) {
+    return GetOrBuildFunction(symbol, instantiated_info->vars);
+  } else {
+    return GetOrBuildFunction(symbol, TypeVec{});
+  }
 }
 
 

@@ -688,7 +688,6 @@ class IdentifierExpression : public Expression {
       Expression(Kind::kIdentifier),
       name_(name),
       symbol_(nullptr),
-      instantiated_vars_(),
       lvalue_(false) {}
 
  public:
@@ -697,16 +696,12 @@ class IdentifierExpression : public Expression {
   Symbol* symbol() const { return symbol_; }
   void set_symbol(Symbol* symbol) { symbol_ = symbol; }
 
-  const Vector<TypeMetavar*>& instantiated_vars() const { return instantiated_vars_; }
-  void set_instantiated_vars(Vector<TypeMetavar*>&& vars) { instantiated_vars_ = std::move(vars); }
-
   bool is_lvalue() const { return lvalue_; }
   void set_lvalue(bool lvalue) { lvalue_ = lvalue; }
 
  private:
   Identifier* name_;
   Symbol* symbol_;
-  Vector<TypeMetavar*> instantiated_vars_;
   bool lvalue_;
 };
 

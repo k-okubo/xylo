@@ -646,6 +646,38 @@ TEST(ClassTest, ClassInFunction_WithPolymorphicMethod) {
 }
 
 
+TEST(ClassTest, ClassInLambda) {
+  auto source = R"(
+    def main() {
+      let result = outer(5.0).compute()
+      return result == 50.0 ? 1 : 0
+    }
+
+    def outer(x) {
+      let foo = new Foo{value: x}
+
+      let create_bar = fn(y) {
+        return new Bar{value: y}
+        class Bar {
+          value: float
+          def compute() => foo.mul(value)
+        }
+      }
+
+      return create_bar(10.0)
+    }
+
+    class Foo {
+      value: float
+      def mul(a) => value * a
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
 TEST(ClassTest, CLassInClass) {
   auto source = R"(
     class Outer {

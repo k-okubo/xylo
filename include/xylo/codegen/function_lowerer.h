@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "xylo/codegen/building_util.h"
 #include "xylo/codegen/declaration_lowerer.h"
 
 namespace xylo {
@@ -57,7 +58,7 @@ class FunctionLowerer : public DeclarationLowerer {
   llvm::Value* BuildOuterEnvIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env);
   llvm::Value* BuildLocalValueIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env);
   llvm::Value* BuildFunctionIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env);
-  llvm::Value* BuildFunctionExpression(FunctionExpression* expr);
+  llvm::Value* BuildFunctionExpression(FunctionExpression* expr, llvm::Value** out_closure_env);
   llvm::Value* BuildApplyExpression(ApplyExpression* expr);
   llvm::Value* BuildUnaryExpression(UnaryExpression* expr);
   llvm::Value* BuildBinaryExpression(BinaryExpression* expr);
@@ -73,6 +74,30 @@ class FunctionLowerer : public DeclarationLowerer {
   void BuildFieldEntry(FieldEntry* entry, xylo::Type* var_type, llvm::Value* ptr);
 
  protected:
+  template <typename F>
+  llvm::Value* ReturnFunction(llvm::Value* func, llvm::Value** out_closure_env, bool is_closure, F closure_env) {
+    if (is_closure) {
+      auto env_ptr = closure_env();
+
+      if (out_closure_env != nullptr) {
+        // return func and env
+        *out_closure_env = env_ptr;
+        return func;
+      } else {
+        // return closure object
+        BuildingUtil bu(this, &builder_);
+        return bu.CreateClosureObject(func, env_ptr);
+      }
+
+    } else {
+      // return regular function
+      if (out_closure_env != nullptr) {
+        *out_closure_env = null_ptr();
+      }
+      return func;
+    }
+  }
+
   llvm::Type* ZonkAndConvert(xylo::Type* type, bool function_as_pointer);
   llvm::Value* ZonkAndAdjustType(llvm::Value* value, xylo::Type* from_type, xylo::Type* to_type);
 

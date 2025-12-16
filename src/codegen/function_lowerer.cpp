@@ -1,7 +1,6 @@
 
 #include "xylo/codegen/function_lowerer.h"
 
-#include "xylo/codegen/building_util.h"
 #include "xylo/codegen/class_lowerer.h"
 #include "xylo/codegen/type_converter.h"
 
@@ -15,7 +14,7 @@ llvm::Function* FunctionLowerer::GetOrBuildFunction() {
 
   llvm_func_ = CreatePrototype();
 
-  if (!never_called_)  {
+  if (!never_called_) {
     BuildBody(llvm_func_);
   }
 
@@ -212,7 +211,7 @@ llvm::Value* FunctionLowerer::BuildExpression(Expression* expr) {
       xylo_unreachable();
 
     case Expression::Kind::kFunction:
-      return BuildFunctionExpression(expr->As<FunctionExpression>());
+      return BuildFunctionExpression(expr->As<FunctionExpression>(), nullptr);
 
     case Expression::Kind::kApply:
       return BuildApplyExpression(expr->As<ApplyExpression>());
@@ -358,42 +357,24 @@ llvm::Value* FunctionLowerer::BuildFunctionIdentifier(IdentifierExpression* expr
   auto llvm_func = LoweringNode::GetOrBuildFunction(symbol, expr->instantiated_vars());
   auto xylo_func = GetXyloFunction(symbol);
 
-  if (xylo_func->is_closure()) {
+  return ReturnFunction(llvm_func, out_closure_env, xylo_func->is_closure(), [this, symbol]() {
     auto [env_ptr, _] = LoadOuterEnvironmentPtr(symbol);
-
-    if (out_closure_env != nullptr) {
-      // return func and env
-      *out_closure_env = env_ptr;
-      return llvm_func;
-    } else {
-      // return closure object
-      BuildingUtil bu(this, &builder_);
-      return bu.CreateClosureObject(llvm_func, env_ptr);
-    }
-
-  } else {
-    // return regular function
-    if (out_closure_env != nullptr) {
-      *out_closure_env = null_ptr();
-    }
-    return llvm_func;
-  }
+    return env_ptr;
+  });
 }
 
 
-llvm::Value* FunctionLowerer::BuildFunctionExpression(FunctionExpression* expr) {
+llvm::Value* FunctionLowerer::BuildFunctionExpression(FunctionExpression* expr, llvm::Value** out_closure_env) {
   auto ext_subst = std::make_unique<Substitution>(subst());
   auto nested_lowerer = new FunctionLowerer(this, std::move(ext_subst), expr);
   nested_lowerer->set_func_name(String("anon"));
+
   add_child(LoweringNodePtr(nested_lowerer));
   auto llvm_func = nested_lowerer->GetOrBuildFunction();
 
-  if (expr->is_closure()) {
-    BuildingUtil bu(this, &builder_);
-    return bu.CreateClosureObject(llvm_func, inner_env_ptr());
-  } else {
-    return llvm_func;
-  }
+  return ReturnFunction(llvm_func, out_closure_env, expr->is_closure(), [this]() {
+    return inner_env_ptr();
+  });
 }
 
 
@@ -422,6 +403,11 @@ llvm::Value* FunctionLowerer::BuildApplyExpression(ApplyExpression* expr) {
   switch (expr->func()->kind()) {
     case Expression::Kind::kIdentifier:
       func_value = BuildIdentifierExpression(expr->func()->As<IdentifierExpression>(), &closure_env_ptr);
+      arg_values[0] = closure_env_ptr;
+      break;
+
+    case Expression::Kind::kFunction:
+      func_value = BuildFunctionExpression(expr->func()->As<FunctionExpression>(), &closure_env_ptr);
       arg_values[0] = closure_env_ptr;
       break;
 
@@ -905,14 +891,9 @@ llvm::Value* FunctionLowerer::BuildClassSelect(SelectExpression* expr, NominalTy
       // load method's owner pointer
       object_ptr = bu.MemberPtr(instance_struct, object_ptr, member_path, 1);  // skip method slot
 
-      if (out_closure_env != nullptr) {
-        // return func and object pointer as env
-        *out_closure_env = object_ptr;
-        return llvm_func;
-      } else {
-        // return closure object
-        return bu.CreateClosureObject(llvm_func, object_ptr);
-      }
+      return ReturnFunction(llvm_func, out_closure_env, true, [object_ptr]() {
+        return object_ptr;
+      });
     }
 
     case MemberInfo::Kind::kSuper:
@@ -942,14 +923,9 @@ llvm::Value* FunctionLowerer::BuildInterfaceSelect(SelectExpression* expr, Nomin
   auto func_ptr_field = bu.MemberPtr(vtable_struct, vtable_ptr, member_path);
   auto func_ptr = builder_.CreateLoad(tc.PointerType(), func_ptr_field);
 
-  if (out_closure_env != nullptr) {
-    // return func and object pointer as env
-    *out_closure_env = object_ptr;
-    return func_ptr;
-  } else {
-    // return closure object
-    return bu.CreateClosureObject(func_ptr, object_ptr);
-  }
+  return ReturnFunction(func_ptr, out_closure_env, true, [object_ptr]() {
+    return object_ptr;
+  });
 }
 
 

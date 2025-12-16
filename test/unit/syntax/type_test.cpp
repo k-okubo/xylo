@@ -1019,15 +1019,25 @@ TEST(TypeTest, FunctionVariable_Linear_Single1) {
   EXPECT_TRUE(func_foo_to_bar->IsSubtypeOf(metavar1));
   EXPECT_TRUE(func_foo_to_bar->IsSubtypeOf(metavar2));
   EXPECT_TRUE(func_foo_to_bar->IsSubtypeOf(metavar3));
-  // EXPECT_FALSE(metavar1->IsSubtypeOf(func_foo_to_bar));
-  // EXPECT_FALSE(metavar2->IsSubtypeOf(func_foo_to_bar));
-  // EXPECT_FALSE(metavar3->IsSubtypeOf(func_foo_to_bar));
+  EXPECT_TRUE(metavar1->IsSubtypeOf(func_foo_to_bar));
+  EXPECT_TRUE(metavar2->IsSubtypeOf(func_foo_to_bar));
+  EXPECT_TRUE(metavar3->IsSubtypeOf(func_foo_to_bar));
 
   Substitution subst;
   TypeArena arena;
   EXPECT_TRUE(metavar1->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
   EXPECT_TRUE(metavar2->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
   EXPECT_TRUE(metavar3->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
+
+  TypePrinter vtp({.verbose = true});
+  EXPECT_EQ(vtp(metavar1),
+            "A' where "
+            "<Bottom> <: A' = (B' -> C') <: D', (E' | Foo) <: B' <: Foo, Bar <: C' <: (Base1 & F' & Bar), "
+            "A' <: D' = (E' -> F') <: G', (H' | Foo) <: E' <: (Foo & B'), (Bar | C') <: F' <: (Base1 & I' & Bar), "
+            "D' <: G' = (H' -> I') <: <Top>, Foo <: H' <: (Foo & E'), (Bar | F') <: I' <: (Base1 & Bar)");
+
+  TypePrinter stp({.verbose = false});
+  EXPECT_EQ(stp(metavar1), "Foo -> Bar");
 
   delete foo_param;
   delete func_foo_to_bar;
@@ -1058,15 +1068,25 @@ TEST(TypeTest, FunctionVariable_Linear_Single2) {
   EXPECT_TRUE(func_foo_to_bar->IsSubtypeOf(metavar1));
   EXPECT_TRUE(func_foo_to_bar->IsSubtypeOf(metavar2));
   EXPECT_TRUE(func_foo_to_bar->IsSubtypeOf(metavar3));
-  // EXPECT_FALSE(metavar1->IsSubtypeOf(func_foo_to_bar));
-  // EXPECT_FALSE(metavar2->IsSubtypeOf(func_foo_to_bar));
-  // EXPECT_FALSE(metavar3->IsSubtypeOf(func_foo_to_bar));
+  EXPECT_TRUE(metavar1->IsSubtypeOf(func_foo_to_bar));
+  EXPECT_TRUE(metavar2->IsSubtypeOf(func_foo_to_bar));
+  EXPECT_TRUE(metavar3->IsSubtypeOf(func_foo_to_bar));
 
   Substitution subst;
   TypeArena arena;
   EXPECT_TRUE(metavar1->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
   EXPECT_TRUE(metavar2->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
   EXPECT_TRUE(metavar3->Zonk(&subst, true, &arena)->equals(func_foo_to_bar));
+
+  TypePrinter vtp({.verbose = true});
+  EXPECT_EQ(vtp(metavar1),
+            "A' where "
+            "<Bottom> <: A' = (B' -> C') <: D', (E' | Foo) <: B' <: Foo, Bar <: C' <: (Base1 & F' & Bar), "
+            "A' <: D' = (E' -> F') <: G', (Foo | H') <: E' <: (Foo & B'), (Bar | C') <: F' <: (Base1 & Bar & I'), "
+            "D' <: G' = (H' -> I') <: <Top>, Foo <: H' <: (Foo & E'), (Bar | F') <: I' <: Bar");
+
+  TypePrinter stp({.verbose = false});
+  EXPECT_EQ(stp(metavar1), "Foo -> Bar");
 
   delete foo_param;
   delete func_foo_to_bar;

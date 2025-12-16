@@ -957,14 +957,14 @@ bool VariableBase::CanConstrainUpperBound(const Type* new_ub, TypePairSet* visit
   xylo_contract(new_ub->kind() != Type::Kind::kTuple);
   xylo_contract(new_ub->kind() != Type::Kind::kIntersection);
   xylo_contract(new_ub->kind() != Type::Kind::kScheme);
-  xylo_contract(!(owner_->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kMetavar));
+  xylo_contract(!(this->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kMetavar));
 
   if (upper_bound()->IsSubtypeOf(new_ub)) {
     return true;
   }
 
   // circular types are prohibited
-  if (OccursIn(new_ub, owner_, false)) {
+  if (OccursIn(new_ub, this, false)) {
     return false;
   }
 
@@ -972,14 +972,8 @@ bool VariableBase::CanConstrainUpperBound(const Type* new_ub, TypePairSet* visit
     return false;
   }
 
-  if (func_shape() != nullptr) {
-    auto func_for_check = func_shape();
-    FunctionType temp_func_shape(false, func_shape()->params_type(), func_shape()->return_type());
-    if (!lower_based_closure_) {
-      func_for_check = &temp_func_shape;
-    }
-
-    if (!func_for_check->CanConstrainSubtypeOf(new_ub, visited)) {
+  if (lower_func_shape() != nullptr) {
+    if (!lower_func_shape()->CanConstrainSubtypeOf(new_ub, visited)) {
       return false;
     }
   }
@@ -993,14 +987,13 @@ bool VariableBase::CanConstrainLowerBound(const Type* new_lb, TypePairSet* visit
   xylo_contract(new_lb->kind() != Type::Kind::kTuple);
   xylo_contract(new_lb->kind() != Type::Kind::kUnion);
   xylo_contract(new_lb->kind() != Type::Kind::kScheme);
-  xylo_contract(!(owner_->kind() == Type::Kind::kTyvar && new_lb->kind() == Type::Kind::kMetavar));
-
+  xylo_contract(!(this->kind() == Type::Kind::kTyvar && new_lb->kind() == Type::Kind::kMetavar));
   if (new_lb->IsSubtypeOf(lower_bound())) {
     return true;
   }
 
   // circular types are prohibited
-  if (OccursIn(new_lb, owner_, false)) {
+  if (OccursIn(new_lb, this, false)) {
     return false;
   }
 
@@ -1008,14 +1001,8 @@ bool VariableBase::CanConstrainLowerBound(const Type* new_lb, TypePairSet* visit
     return false;
   }
 
-  if (func_shape() != nullptr) {
-    auto func_for_check = func_shape();
-    FunctionType temp_func_shape(true, func_shape()->params_type(), func_shape()->return_type());
-    if (lower_based_closure_) {
-      func_for_check = &temp_func_shape;
-    }
-
-    if (!new_lb->CanConstrainSubtypeOf(func_for_check, visited)) {
+  if (upper_func_shape() != nullptr) {
+    if (!new_lb->CanConstrainSubtypeOf(upper_func_shape(), visited)) {
       return false;
     }
   }
@@ -1028,84 +1015,50 @@ bool VariableBase::ConstrainUpperBound(Type* new_ub, TypePairSet* visited) {
   xylo_contract(new_ub->kind() != Type::Kind::kTuple);
   xylo_contract(new_ub->kind() != Type::Kind::kIntersection);
   xylo_contract(new_ub->kind() != Type::Kind::kScheme);
-  xylo_contract(!(owner_->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kMetavar));
+  xylo_contract(!(this->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kMetavar));
 
-  // avoid redundant constraints
-  if (upper_bound()->IsSubtypeOf(new_ub)) {
-    return true;
-  }
-
-  // new_ub must be a supertype of lower bound
-  if (!lower_bound_->ConstrainSubtypeOf(new_ub, visited)) {
-    return false;
-  }
-
-  // functionize if needed
   if (new_ub->kind() == Type::Kind::kFunction) {
-    Functionize(new_ub->As<FunctionType>(), false);
-    ConstrainUpperBoundForFunc(new_ub, visited);
-  }
-
-  // constrain func_shape if functionized
-  if (func_shape() != nullptr) {
-    if (!func_shape_->ConstrainSubtypeOf(new_ub, visited)) {
-      return false;
-    }
-  }
-
-  if (new_ub->kind() != Type::Kind::kFunction) {
-    ConstrainUpperBoundForAtom(new_ub, visited);
-  }
-
-  return true;
-}
-
-
-bool VariableBase::ConstrainUpperBoundForFunc(Type* new_ub, TypePairSet* visited) {
-  auto new_ub_func = new_ub->As<FunctionType>();
-
-  // closure subtyping rules
-  if (!lower_based_closure_ && func_shape()->is_closure()) {
-    func_shape_->set_closure(new_ub_func->is_closure());
-  } else if (lower_based_closure_ && !func_shape()->is_closure() && !new_ub_func->is_closure()) {
-    lower_based_closure_ = false;
-  }
-
-  return true;
-}
-
-
-bool VariableBase::ConstrainUpperBoundForAtom(Type* new_ub, TypePairSet* visited) {
-  // does not have references to TypeVariables from inner scopes
-  if (owner_->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kTyvar) {
-    auto owner_tyvar = owner_->As<TypeVariable>();
-    auto ub_tyvar = new_ub->As<TypeVariable>();
-
-    if (ub_tyvar->scope()->is_inner_than(owner_tyvar->scope())) {
+    // already constrained
+    if (upper_func_shape() != nullptr && upper_func_shape()->IsSubtypeOf(new_ub)) {
       return true;
     }
-  }
 
-  // change type variables in MemberConstraint to outer type variables
-  if (owner_->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kMemberConstraint) {
-    auto owner_tyvar = owner_->As<TypeVariable>();
-    auto ub_memcon = new_ub->As<MemberConstraint>();
+    // functionize if needed
+    auto new_ub_func = new_ub->As<FunctionType>();
+    Functionize(new_ub_func);
+    GenUpperBoundFuncShape(new_ub_func, visited);
 
-    if (ub_memcon->expected_type()->kind() == Type::Kind::kTyvar) {
-      auto ub_member_tyvar = ub_memcon->expected_type()->As<TypeVariable>();
-      if (owner_tyvar->scope()->is_outer_than(ub_member_tyvar->scope())) {
-        ub_member_tyvar->set_scope(owner_tyvar->scope());
+    // constrain func shape
+    if (!upper_func_shape()->ConstrainSubtypeOf(new_ub, visited)) {
+      return false;
+    }
+
+    // connect func shape to lower side
+    if (!lower_bound()->ConstrainSubtypeOf(upper_func_shape(), visited)) {
+      return false;
+    }
+
+  } else {
+    // already constrained
+    if (upper_bound()->IsSubtypeOf(new_ub)) {
+      return true;
+    }
+
+    // new_ub must be a supertype of lower bound
+    if (!lower_bound()->ConstrainSubtypeOf(new_ub, visited)) {
+      return false;
+    }
+
+    // new_ub must be a supertype of lower func shape if functionized
+    if (lower_func_shape() != nullptr) {
+      if (!lower_func_shape()->ConstrainSubtypeOf(new_ub, visited)) {
+        return false;
       }
     }
-    if (ub_memcon->expected_type()->kind() == Type::Kind::kMetavar) {
-      auto ub_member_tyvar = new TypeVariable(owner_tyvar->scope());
-      ub_member_tyvar->ConstrainSameAs(ub_memcon->expected_type());
-      ub_memcon->set_expected_type(ub_member_tyvar);
-      owner_->arena()->adopt_type(TypePtr(ub_member_tyvar));
-    }
+
+    AddToUpperBound(new_ub, visited);
   }
 
-  upper_bound_->add_element(new_ub);
   return true;
 }
 
@@ -1115,62 +1068,146 @@ bool VariableBase::ConstrainLowerBound(Type* new_lb, TypePairSet* visited) {
   xylo_contract(new_lb->kind() != Type::Kind::kTuple);
   xylo_contract(new_lb->kind() != Type::Kind::kUnion);
   xylo_contract(new_lb->kind() != Type::Kind::kScheme);
-  xylo_contract(!(owner_->kind() == Type::Kind::kTyvar && new_lb->kind() == Type::Kind::kMetavar));
+  xylo_contract(!(this->kind() == Type::Kind::kTyvar && new_lb->kind() == Type::Kind::kMetavar));
 
-  // avoid redundant constraints
-  if (new_lb->IsSubtypeOf(lower_bound())) {
+  if (new_lb->kind() == Type::Kind::kFunction) {
+    // already constrained
+    if (lower_func_shape() != nullptr && new_lb->IsSubtypeOf(lower_func_shape())) {
+      return true;
+    }
+
+    // functionize if needed
+    auto new_lb_func = new_lb->As<FunctionType>();
+    Functionize(new_lb_func);
+    GenLowerBoundFuncShape(new_lb_func, visited);
+
+    // constrain func shape
+    if (!new_lb->ConstrainSubtypeOf(lower_func_shape(), visited)) {
+      return false;
+    }
+
+    // connect func shape to upper side
+    if (!lower_func_shape()->ConstrainSubtypeOf(upper_bound(), visited)) {
+      return false;
+    }
+
+  } else {
+    // already constrained
+    if (new_lb->IsSubtypeOf(lower_bound())) {
+      return true;
+    }
+
+    // new_lb must be a subtype of upper bound
+    if (!new_lb->ConstrainSubtypeOf(upper_bound(), visited)) {
+      return false;
+    }
+
+    // new_lb must be a subtype of upper func shape if functionized
+    if (upper_func_shape() != nullptr) {
+      if (!new_lb->ConstrainSubtypeOf(upper_func_shape(), visited)) {
+        return false;
+      }
+    }
+
+    AddToLowerBound(new_lb, visited);
+  }
+
+  return true;
+}
+
+
+bool VariableBase::ConstrainBothBounds(VariableBase* dst, TypePairSet* visited) {
+  auto src = this;
+
+  // Merged ConstrainLowerBound and ConstrainUpperBound
+
+  if (src->IsSubtypeOf(dst)) {
     return true;
   }
 
-  // new_lb must be a subtype of upper bound
-  if (!new_lb->ConstrainSubtypeOf(upper_bound_.get(), visited)) {
-    return false;
+  // xylo_check(src->lower_bound_->ConstrainSubtypeOf(dst->owner_, visited));
+  for (auto src_lb : src->lower_bound()->elements()) {
+    if (src_lb->kind() != dst->kind()) {
+      if (!src_lb->ConstrainSubtypeOf(dst, visited)) {
+        return false;
+      }
+    }
   }
 
-  // functionize if needed
-  if (new_lb->kind() == Type::Kind::kFunction) {
-    Functionize(new_lb->As<FunctionType>(), true);
-    ConstrainLowerBoundForFunc(new_lb, visited);
+  // xylo_check(src->owner_->ConstrainSubtypeOf(dst->upper_bound_.get(), visited));
+  for (auto dst_ub : dst->upper_bound()->elements()) {
+    if (dst_ub->kind() != src->kind()) {
+      if (!src->ConstrainSubtypeOf(dst_ub, visited)) {
+        return false;
+      }
+    }
   }
 
   // constrain func_shape if functionized
-  if (func_shape() != nullptr) {
-    if (!new_lb->ConstrainSubtypeOf(func_shape_, visited)) {
+  if (src->lower_func_shape() != nullptr) {
+    if (!src->lower_func_shape()->ConstrainSubtypeOf(dst, visited)) {
+      return false;
+    }
+  }
+  if (dst->upper_func_shape() != nullptr) {
+    if (!src->ConstrainSubtypeOf(dst->upper_func_shape(), visited)) {
       return false;
     }
   }
 
-  if (new_lb->kind() != Type::Kind::kFunction) {
-    ConstrainLowerBoundForAtom(new_lb, visited);
+  if (!src->AddToUpperBound(dst, visited)) {
+    return false;
+  }
+  if (!dst->AddToLowerBound(src, visited)) {
+    return false;
   }
 
   return true;
 }
 
 
-bool VariableBase::ConstrainLowerBoundForFunc(Type* new_lb, TypePairSet* visited) {
-  auto new_lb_func = new_lb->As<FunctionType>();
-
-  // closure subtyping rules
-  if (!lower_based_closure_ && func_shape()->is_closure()) {
-    func_shape_->set_closure(new_lb_func->is_closure());
-    lower_based_closure_ = true;
-  } else if (lower_based_closure_ && !func_shape()->is_closure()) {
-    func_shape_->set_closure(new_lb_func->is_closure());
-    lower_based_closure_ = true;
-  }
-
-  return true;
-}
-
-
-bool VariableBase::ConstrainLowerBoundForAtom(Type* new_lb, TypePairSet* visited) {
+bool VariableBase::AddToUpperBound(Type* new_ub, TypePairSet* visited) {
   // does not have references to TypeVariables from inner scopes
-  if (owner_->kind() == Type::Kind::kTyvar && new_lb->kind() == Type::Kind::kTyvar) {
-    auto owner_tyvar = owner_->As<TypeVariable>();
+  if (this->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kTyvar) {
+    auto this_tyvar = this->As<TypeVariable>();
+    auto ub_tyvar = new_ub->As<TypeVariable>();
+
+    if (ub_tyvar->scope()->is_inner_than(this_tyvar->scope())) {
+      return true;
+    }
+  }
+
+  // change type variables in MemberConstraint to outer type variables
+  if (this->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kMemberConstraint) {
+    auto this_tyvar = this->As<TypeVariable>();
+    auto ub_memcon = new_ub->As<MemberConstraint>();
+
+    if (ub_memcon->expected_type()->kind() == Type::Kind::kTyvar) {
+      auto ub_member_tyvar = ub_memcon->expected_type()->As<TypeVariable>();
+      if (this_tyvar->scope()->is_outer_than(ub_member_tyvar->scope())) {
+        ub_member_tyvar->set_scope(this_tyvar->scope());
+      }
+    }
+    if (ub_memcon->expected_type()->kind() == Type::Kind::kMetavar) {
+      auto ub_member_tyvar = new TypeVariable(this_tyvar->scope());
+      ub_member_tyvar->ConstrainSameAs(ub_memcon->expected_type());
+      ub_memcon->set_expected_type(ub_member_tyvar);
+      this->arena()->adopt_type(TypePtr(ub_member_tyvar));
+    }
+  }
+
+  upper_bound_->add_element(new_ub);
+  return true;
+}
+
+
+bool VariableBase::AddToLowerBound(Type* new_lb, TypePairSet* visited) {
+  // does not have references to TypeVariables from inner scopes
+  if (this->kind() == Type::Kind::kTyvar && new_lb->kind() == Type::Kind::kTyvar) {
+    auto this_tyvar = this->As<TypeVariable>();
     auto lb_tyvar = new_lb->As<TypeVariable>();
 
-    if (lb_tyvar->scope()->is_inner_than(owner_tyvar->scope())) {
+    if (lb_tyvar->scope()->is_inner_than(this_tyvar->scope())) {
       return true;
     }
   }
@@ -1197,7 +1234,7 @@ bool VariableBase::ConstrainLowerBoundForAtom(Type* new_lb, TypePairSet* visited
       if (!ConstrainUpperBound(ancestors.get(), visited)) {
         return false;
       }
-      owner_->arena()->adopt_type(std::move(ancestors));
+      this->arena()->adopt_type(std::move(ancestors));
       break;
   }
 
@@ -1206,74 +1243,50 @@ bool VariableBase::ConstrainLowerBoundForAtom(Type* new_lb, TypePairSet* visited
 }
 
 
-void VariableBase::Functionize(const FunctionType* base_shape, bool lower_based) {
-  if (func_shape_ != nullptr) {
+void VariableBase::Functionize(const FunctionType* base_shape) {
+  if (func_shape() != nullptr) {
     return;
   }
 
   auto params_size = base_shape->params_type()->elements().size();
   auto params = new TupleType();
-  owner_->arena()->adopt_type(TypePtr(params));
+  this->arena()->adopt_type(TypePtr(params));
 
   for (size_t i = 0; i < params_size; ++i) {
-    auto var = func_rettype_();  // TODO: use TypeMetavar
-    owner_->arena()->adopt_type(TypePtr(var));
+    auto var = create_var_();  // TODO: use TypeMetavar
+    this->arena()->adopt_type(TypePtr(var));
     params->add_element(var);
   }
 
-  auto return_type = func_rettype_();
-  func_shape_ = new FunctionType(base_shape->is_closure(), params, return_type);
-  owner_->arena()->adopt_type(TypePtr(return_type));
-  owner_->arena()->adopt_type(TypePtr(func_shape_));
-
-  lower_based_closure_ = lower_based;
+  auto return_type = create_var_();
+  func_shape_ = new FunctionType(false, params, return_type);
+  this->arena()->adopt_type(TypePtr(return_type));
+  this->arena()->adopt_type(TypePtr(func_shape_));
 }
 
 
-bool VariableBase::ConstrainBothBounds(VariableBase* dst, TypePairSet* visited) {
-  auto src = this;
-
-  // Merged ConstrainLowerBound and ConstrainUpperBound
-
-  if (src->owner_->IsSubtypeOf(dst->owner_)) {
-    return true;
-  }
-
-  // xylo_check(src->lower_bound_->ConstrainSubtypeOf(dst->owner_, visited));
-  for (auto src_lb : src->lower_bound()->elements()) {
-    if (src_lb->kind() != dst->owner_->kind()) {
-      if (!src_lb->ConstrainSubtypeOf(dst->owner_, visited)) {
-        return false;
-      }
+bool VariableBase::GenUpperBoundFuncShape(FunctionType* new_ub, TypePairSet* visited) {
+  if (upper_func_shape()) {
+    if (!new_ub->is_closure()) {
+      upper_func_shape_->set_closure(false);
     }
+  } else {
+    upper_func_shape_ =
+        std::make_unique<FunctionType>(new_ub->is_closure(), func_shape_->params_type(), func_shape_->return_type());
   }
 
-  // xylo_check(src->owner_->ConstrainSubtypeOf(dst->upper_bound_.get(), visited));
-  for (auto dst_ub : dst->upper_bound()->elements()) {
-    if (dst_ub->kind() != src->owner_->kind()) {
-      if (!src->owner_->ConstrainSubtypeOf(dst_ub, visited)) {
-        return false;
-      }
-    }
-  }
+  return true;
+}
 
-  // constrain func_shape if functionized
-  if (src->func_shape() != nullptr) {
-    if (!src->func_shape_->ConstrainSubtypeOf(dst->owner_, visited)) {
-      return false;
-    }
-  }
-  if (dst->func_shape() != nullptr) {
-    if (!src->owner_->ConstrainSubtypeOf(dst->func_shape_, visited)) {
-      return false;
-    }
-  }
 
-  if (!src->ConstrainUpperBoundForAtom(dst->owner_, visited)) {
-    return false;
-  }
-  if (!dst->ConstrainLowerBoundForAtom(src->owner_, visited)) {
-    return false;
+bool VariableBase::GenLowerBoundFuncShape(FunctionType* new_lb, TypePairSet* visited) {
+  if (lower_func_shape()) {
+    if (new_lb->is_closure()) {
+      lower_func_shape_->set_closure(true);
+    }
+  } else {
+    lower_func_shape_ =
+        std::make_unique<FunctionType>(new_lb->is_closure(), func_shape_->params_type(), func_shape_->return_type());
   }
 
   return true;
@@ -1671,7 +1684,9 @@ Type* TypeScheme::Instantiate(TypeArena* arena, Vector<TypeMetavar*>* out_vars, 
     // substitute function shape
     if (tyvar->func_shape() != nullptr) {
       auto func_shape = subst.Apply(tyvar->func_shape(), arena);
-      metavar->set_func_shape(func_shape->As<FunctionType>(), tyvar->is_lower_based_closure());
+      metavar->set_func_shape(func_shape->As<FunctionType>());
+      metavar->set_upper_func_shape(tyvar->upper_func_shape());
+      metavar->set_lower_func_shape(tyvar->lower_func_shape());
     }
   }
 
@@ -1962,6 +1977,7 @@ Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeArena* arena
     }
 
     if (!found) {
+      xylo_contract(ancestors.size() == 0);
       if (strict) {
         return ErrorType::instance();
       } else {

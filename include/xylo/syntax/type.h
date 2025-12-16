@@ -488,28 +488,45 @@ class UnionType : public Type {
 };
 
 
-class VariableBase {
+class VariableBase : public Type {
  public:
-  VariableBase(Type* owner, std::function<Type*()> func_rettype) :
-      owner_(owner),
+  VariableBase(Kind kind, std::function<Type*()> create_var) :
+      Type(kind),
       upper_bound_(new IntersectionType()),
       lower_bound_(new UnionType()),
       func_shape_(nullptr),
-      lower_based_closure_(false),
-      func_rettype_(func_rettype) {}
+      upper_func_shape_(nullptr),
+      lower_func_shape_(nullptr),
+      create_var_(create_var) {}
 
-  ~VariableBase() = default;
+  IntersectionType* upper_bound() const { return upper_bound_.get(); }
+  UnionType* lower_bound() const { return lower_bound_.get(); }
+  FunctionType* func_shape() const { return lower_func_shape() ? lower_func_shape() : upper_func_shape(); }
 
-  const IntersectionType* upper_bound() const { return upper_bound_.get(); }
-  const UnionType* lower_bound() const { return lower_bound_.get(); }
-  FunctionType* func_shape() const { return func_shape_; }
-  bool is_lower_based_closure() const { return lower_based_closure_; }
-
+ protected:
   void set_upper_bound(IntersectionTypePtr&& upper_bound) { upper_bound_ = std::move(upper_bound); }
   void set_lower_bound(UnionTypePtr&& lower_bound) { lower_bound_ = std::move(lower_bound); }
-  void set_func_shape(FunctionType* func_shape, bool lower_based_closure) {
-    func_shape_ = func_shape;
-    lower_based_closure_ = lower_based_closure;
+
+  FunctionType* upper_func_shape() const { return upper_func_shape_.get(); }
+  FunctionType* lower_func_shape() const { return lower_func_shape_.get(); }
+  void set_func_shape(FunctionType* func_shape) { func_shape_ = func_shape; }
+
+  void set_upper_func_shape(const FunctionType* upper_func_shape) {
+    if (upper_func_shape) {
+      upper_func_shape_ = std::make_unique<FunctionType>(upper_func_shape->is_closure(), func_shape_->params_type(),
+                                                         func_shape_->return_type());
+    } else {
+      upper_func_shape_ = nullptr;
+    }
+  }
+
+  void set_lower_func_shape(const FunctionType* lower_func_shape) {
+    if (lower_func_shape) {
+      lower_func_shape_ = std::make_unique<FunctionType>(lower_func_shape->is_closure(), func_shape_->params_type(),
+                                                         func_shape_->return_type());
+    } else {
+      lower_func_shape_ = nullptr;
+    }
   }
 
   bool CanConstrainUpperBound(const Type* new_ub, TypePairSet* visited) const;
@@ -519,31 +536,30 @@ class VariableBase {
   bool ConstrainLowerBound(Type* new_lb, TypePairSet* visited);
   bool ConstrainBothBounds(VariableBase* dst, TypePairSet* visited);
 
- protected:
-  bool ConstrainUpperBoundForFunc(Type* new_ub, TypePairSet* visited);
-  bool ConstrainUpperBoundForAtom(Type* new_ub, TypePairSet* visited);
+  bool AddToUpperBound(Type* new_ub, TypePairSet* visited);
+  bool AddToLowerBound(Type* new_lb, TypePairSet* visited);
 
-  bool ConstrainLowerBoundForFunc(Type* new_lb, TypePairSet* visited);
-  bool ConstrainLowerBoundForAtom(Type* new_lb, TypePairSet* visited);
-
-  void Functionize(const FunctionType* base_shape, bool lower_based);
-
+  void Functionize(const FunctionType* base_shape);
+  bool GenUpperBoundFuncShape(FunctionType* new_ub, TypePairSet* visited);
+  bool GenLowerBoundFuncShape(FunctionType* new_lb, TypePairSet* visited);
 
  private:
-  Type* owner_;
-
   IntersectionTypePtr upper_bound_;
   UnionTypePtr lower_bound_;
 
   FunctionType* func_shape_;
-  bool lower_based_closure_;  // whether the lower side set the closure flag of func_shape
-  std::function<Type*()> func_rettype_;
+  FunctionTypePtr upper_func_shape_;
+  FunctionTypePtr lower_func_shape_;
+  std::function<Type*()> create_var_;
+
+  friend class Type;
+  friend class TypeScheme;
 };
 
 
-class TypeVariable : public Type {
+class TypeVariable : public VariableBase {
  protected:
-  static constexpr auto func_rettype(Scope* scope) {
+  static constexpr auto create_var(Scope* scope) {
     return [scope]() {
       return new TypeVariable(scope);
     };
@@ -551,51 +567,28 @@ class TypeVariable : public Type {
 
  public:
   explicit TypeVariable(Scope* scope) :
-      Type(Kind::kTyvar),
-      varbase_(this, func_rettype(scope)),
+      VariableBase(Kind::kTyvar, create_var(scope)),
       scope_(scope) {}
 
   Scope* scope() const { return scope_; }
   void set_scope(Scope* scope) { scope_ = scope; }
 
-  auto upper_bound() const { return varbase_.upper_bound(); }
-  auto lower_bound() const { return varbase_.lower_bound(); }
-  auto func_shape() const { return varbase_.func_shape(); }
-  auto is_lower_based_closure() const { return varbase_.is_lower_based_closure(); }
-
   bool equals(const Type* other) const override;
   bool is_atomic_type() const override { return true; }
-  bool is_function_type() const override { return varbase_.func_shape() != nullptr; }
+  bool is_function_type() const override { return func_shape() != nullptr; }
   bool is_var_type() const override { return true; }
 
   Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
- protected:
-  bool CanConstrainUpperBound(const Type* new_ub, TypePairSet* visited) const {
-    return varbase_.CanConstrainUpperBound(new_ub, visited);
-  }
-  bool CanConstrainLowerBound(const Type* new_lb, TypePairSet* visited) const {
-    return varbase_.CanConstrainLowerBound(new_lb, visited);
-  }
-
-  bool ConstrainUpperBound(Type* new_ub, TypePairSet* visited) { return varbase_.ConstrainUpperBound(new_ub, visited); }
-  bool ConstrainLowerBound(Type* new_lb, TypePairSet* visited) { return varbase_.ConstrainLowerBound(new_lb, visited); }
-  bool ConstrainBothBounds(TypeVariable* dst, TypePairSet* visited) {
-    return varbase_.ConstrainBothBounds(&dst->varbase_, visited);
-  }
-
  private:
-  VariableBase varbase_;
   Scope* scope_;
-
-  friend class Type;
 };
 
 
-class TypeMetavar : public Type {
+class TypeMetavar : public VariableBase {
  protected:
-  static constexpr auto func_rettype() {
+  static constexpr auto create_var() {
     return []() {
       return new TypeMetavar();
     };
@@ -603,47 +596,14 @@ class TypeMetavar : public Type {
 
  public:
   TypeMetavar() :
-      Type(Kind::kMetavar),
-      varbase_(this, func_rettype()) {}
-
-  auto upper_bound() const { return varbase_.upper_bound(); }
-  auto lower_bound() const { return varbase_.lower_bound(); }
-  auto func_shape() const { return varbase_.func_shape(); }
-  auto is_lower_based_closure() const { return varbase_.is_lower_based_closure(); }
-
+      VariableBase(Kind::kMetavar, create_var()) {}
   bool equals(const Type* other) const override;
   bool is_atomic_type() const override { return true; }
-  bool is_function_type() const override { return varbase_.func_shape() != nullptr; }
+  bool is_function_type() const override { return func_shape() != nullptr; }
   bool is_var_type() const override { return true; }
 
   Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
-
- protected:
-  void set_upper_bound(IntersectionTypePtr&& upper_bound) { varbase_.set_upper_bound(std::move(upper_bound)); }
-  void set_lower_bound(UnionTypePtr&& lower_bound) { varbase_.set_lower_bound(std::move(lower_bound)); }
-  void set_func_shape(FunctionType* func_shape, bool lower_based_closure) {
-    varbase_.set_func_shape(func_shape, lower_based_closure);
-  }
-
-  bool CanConstrainUpperBound(const Type* new_ub, TypePairSet* visited) const {
-    return varbase_.CanConstrainUpperBound(new_ub, visited);
-  }
-  bool CanConstrainLowerBound(const Type* new_lb, TypePairSet* visited) const {
-    return varbase_.CanConstrainLowerBound(new_lb, visited);
-  }
-
-  bool ConstrainUpperBound(Type* new_ub, TypePairSet* visited) { return varbase_.ConstrainUpperBound(new_ub, visited); }
-  bool ConstrainLowerBound(Type* new_lb, TypePairSet* visited) { return varbase_.ConstrainLowerBound(new_lb, visited); }
-  bool ConstrainBothBounds(TypeMetavar* dst, TypePairSet* visited) {
-    return varbase_.ConstrainBothBounds(&dst->varbase_, visited);
-  }
-
- private:
-  VariableBase varbase_;
-
-  friend class Type;
-  friend class TypeScheme;
 };
 
 

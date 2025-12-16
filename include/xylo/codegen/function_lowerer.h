@@ -18,6 +18,7 @@ class FunctionLowerer : public DeclarationLowerer {
       xylo_func_(xylo_func),
       func_name_(),
       llvm_func_(nullptr),
+      never_called_(false),
       builder_(llvm_context()),
       variable_value_map_(),
       outer_env_ptr_(nullptr),
@@ -95,6 +96,7 @@ class FunctionLowerer : public DeclarationLowerer {
   FunctionExpression* xylo_func_;
   String func_name_;
   llvm::Function* llvm_func_;
+  bool never_called_;
 
   llvm::IRBuilder<> builder_;
   Map<Symbol*, llvm::Value*> variable_value_map_;

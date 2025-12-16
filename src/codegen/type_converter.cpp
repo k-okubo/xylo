@@ -16,11 +16,11 @@ llvm::Type* TypeConverter::Convert(xylo::Type* type, bool function_as_pointer) {
 
     case xylo::Type::Kind::kIntersection:
       xylo_contract(type->is_top_type());
-      return llvm::Type::getInt64Ty(llvm_context_);
+      return llvm::Type::getInt16Ty(llvm_context_);
 
     case xylo::Type::Kind::kUnion:
       xylo_contract(type->is_bottom_type());
-      return llvm::Type::getInt64Ty(llvm_context_);
+      return llvm::Type::getInt16Ty(llvm_context_);
 
     case xylo::Type::Kind::kError:
     case xylo::Type::Kind::kMemberConstraint:

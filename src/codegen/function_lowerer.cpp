@@ -14,16 +14,40 @@ llvm::Function* FunctionLowerer::GetOrBuildFunction() {
   }
 
   llvm_func_ = CreatePrototype();
-  BuildBody(llvm_func_);
+
+  if (!never_called_)  {
+    BuildBody(llvm_func_);
+  }
+
   return llvm_func_;
 }
 
 
 llvm::Function* FunctionLowerer::CreatePrototype() {
-  auto func_type = llvm::dyn_cast<llvm::FunctionType>(ZonkAndConvert(xylo_func()->type(), false));
+  TypeConverter tc(xylo_context(), llvm_context());
+  TypeArena arena;
+  auto zonked_type = xylo_func()->type()->Zonk(subst(), false, &arena);
+  auto func_type = llvm::dyn_cast<llvm::FunctionType>(tc.Convert(zonked_type, false));
   xylo_contract(func_type != nullptr);
+
   auto name = llvm::StringRef(func_name().data(), func_name().size());
-  return llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, name, llvm_module());
+  auto prototype = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, name, llvm_module());
+
+  // this function is not called if any parameter type remains unresolved
+  for (auto param : zonked_type->As<xylo::FunctionType>()->params_type()->elements()) {
+    if (param->is_bottom_type()) {
+      never_called_ = true;
+      break;
+    }
+  }
+
+  if (never_called_) {
+    auto entry_bb = llvm::BasicBlock::Create(llvm_context(), "entry", prototype);
+    builder_.SetInsertPoint(entry_bb);
+    builder_.CreateUnreachable();
+  }
+
+  return prototype;
 }
 
 

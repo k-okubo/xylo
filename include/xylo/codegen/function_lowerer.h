@@ -55,8 +55,8 @@ class FunctionLowerer : public DeclarationLowerer {
   llvm::Value* BuildLiteralExpression(LiteralExpression* expr);
   llvm::Value* BuildThisExpression(ThisExpression* expr);
   llvm::Value* BuildIdentifierExpression(IdentifierExpression* expr, llvm::Value** out_closure_env);
-  llvm::Value* BuildOuterEnvIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env);
-  llvm::Value* BuildLocalValueIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env);
+  llvm::Value* BuildOuterEnvIdentifier(IdentifierExpression* expr);
+  llvm::Value* BuildLocalValueIdentifier(IdentifierExpression* expr);
   llvm::Value* BuildFunctionIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env);
   llvm::Value* BuildFunctionExpression(FunctionExpression* expr, llvm::Value** out_closure_env);
   llvm::Value* BuildApplyExpression(ApplyExpression* expr);

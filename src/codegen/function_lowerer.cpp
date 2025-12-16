@@ -283,9 +283,9 @@ llvm::Value* FunctionLowerer::BuildIdentifierExpression(IdentifierExpression* ex
     case Symbol::Kind::kLet:
     case Symbol::Kind::kVar:
       if (symbol->is_captured() && symbol->scope()->is_outer_than(xylo_func()->inner_scope())) {
-        return BuildOuterEnvIdentifier(expr, out_closure_env);
+        return BuildOuterEnvIdentifier(expr);
       } else {
-        return BuildLocalValueIdentifier(expr, out_closure_env);
+        return BuildLocalValueIdentifier(expr);
       }
 
     case Symbol::Kind::kFunc:
@@ -296,7 +296,7 @@ llvm::Value* FunctionLowerer::BuildIdentifierExpression(IdentifierExpression* ex
 }
 
 
-llvm::Value* FunctionLowerer::BuildOuterEnvIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env) {
+llvm::Value* FunctionLowerer::BuildOuterEnvIdentifier(IdentifierExpression* expr) {
   auto symbol = expr->symbol();
   xylo_contract(symbol->is_captured());
 
@@ -323,7 +323,7 @@ llvm::Value* FunctionLowerer::BuildOuterEnvIdentifier(IdentifierExpression* expr
 }
 
 
-llvm::Value* FunctionLowerer::BuildLocalValueIdentifier(IdentifierExpression* expr, llvm::Value** out_closure_env) {
+llvm::Value* FunctionLowerer::BuildLocalValueIdentifier(IdentifierExpression* expr) {
   auto symbol = expr->symbol();
 
   switch (symbol->kind()) {

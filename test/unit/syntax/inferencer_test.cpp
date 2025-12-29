@@ -447,7 +447,7 @@ TEST(InferencerTest, FuncTypeRepr_ParamTuple) {
   EXPECT_EQ(inferencer.diagnostics().size(), 1);
   EXPECT_EQ(inferencer.diagnostics()[0].message, "unsupported type in declaration");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
-  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 20);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 16);
 }
 
 
@@ -1539,7 +1539,7 @@ TEST(InferencerTest, NewObject_IncompatibleType) {
 }
 
 
-TEST(InferencerTest, NewObject_NonClass) {
+TEST(InferencerTest, NewObject_NonClass1) {
   auto source = R"(
     def main() {
       let p = new int{}
@@ -1556,6 +1556,26 @@ TEST(InferencerTest, NewObject_NonClass) {
   EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'int' cannot be instantiated");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 19);
+}
+
+
+TEST(InferencerTest, NewObject_NonClass2) {
+  auto source = R"(
+    def main() {
+      let p = new (int -> int){}
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'int -> int' cannot be instantiated");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 20);
 }
 
 
@@ -2474,7 +2494,7 @@ TEST(InferencerTest, Embedding_Basic) {
     def main() {
       let foo = new Foo{
           a: 10,
-          Bar: {
+          bar: {
             b: 3.14
           }
         }
@@ -2484,7 +2504,7 @@ TEST(InferencerTest, Embedding_Basic) {
 
     class Foo {
       a: int
-      embed Bar
+      embed bar: Bar
     }
     class Bar {
       b: float
@@ -2518,10 +2538,10 @@ TEST(InferencerTest, Embedding_AmbiguousField) {
     def main() {
       let foo = new Foo{
           a: 10,
-          Bar: {
+          bar: {
             b: 3.14
           },
-          Baz: {
+          baz: {
             b: 2.71
           }
         }
@@ -2531,8 +2551,8 @@ TEST(InferencerTest, Embedding_AmbiguousField) {
 
     class Foo {
       a: int
-      embed Bar
-      embed Baz
+      embed bar: Bar
+      embed baz: Baz
     }
     class Bar {
       b: float
@@ -2561,10 +2581,10 @@ TEST(InferencerTest, Embedding_AmbiguousField) {
 TEST(InferencerTest, Embedding_Cyclic) {
   auto source = R"(
     class A {
-      embed B
+      embed b: B
     }
     class B {
-      embed A
+      embed a: A
     }
 
     def main() {
@@ -2582,9 +2602,9 @@ TEST(InferencerTest, Embedding_Cyclic) {
 
   EXPECT_EQ(inferencer.diagnostics()[0].message, "cyclic embedding detected");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
-  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 13);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 16);
 
-  EXPECT_EQ(inferencer.diagnostics()[1].message, "missing field 'B'");
+  EXPECT_EQ(inferencer.diagnostics()[1].message, "missing field 'b'");
   EXPECT_EQ(inferencer.diagnostics()[1].position.start.line, 10);
   EXPECT_EQ(inferencer.diagnostics()[1].position.start.column, 19);
 }
@@ -2597,7 +2617,7 @@ TEST(InferencerTest, Embedding_MissingInitializer) {
     }
 
     class Foo {
-      embed Bar
+      embed bar: Bar
     }
     class Bar {
     }
@@ -2610,16 +2630,16 @@ TEST(InferencerTest, Embedding_MissingInitializer) {
   inferencer.VisitFileAST(file_ast.get());
   ASSERT_TRUE(inferencer.has_diagnostics());
   EXPECT_EQ(inferencer.diagnostics().size(), 1);
-  EXPECT_EQ(inferencer.diagnostics()[0].message, "missing field 'Bar'");
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "missing field 'bar'");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 21);
 }
 
 
-TEST(InferencerTest, Embedding_NonClass) {
+TEST(InferencerTest, Embedding_NonClass1) {
   auto source = R"(
     class Foo {
-      embed int
+      embed base: int
     }
 
     def main() {
@@ -2636,7 +2656,31 @@ TEST(InferencerTest, Embedding_NonClass) {
   EXPECT_EQ(inferencer.diagnostics().size(), 1);
   EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'int' cannot be embedded");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
-  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 13);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 19);
+}
+
+
+TEST(InferencerTest, Embedding_NonClass2) {
+  auto source = R"(
+    class Foo {
+      embed base: int -> int
+    }
+
+    def main() {
+      let foo = new Foo{}
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'int -> int' cannot be embedded");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 19);
 }
 
 
@@ -2829,7 +2873,7 @@ TEST(InferencerTest, Interface_AmbiguousMethod) {
 }
 
 
-TEST(InferencerTest, Inherit_NonInterface) {
+TEST(InferencerTest, Inherit_NonInterface1) {
   auto source = R"(
     class Foo : int {
     }
@@ -2845,6 +2889,215 @@ TEST(InferencerTest, Inherit_NonInterface) {
   EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'int' cannot be inherited from");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 2);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 17);
+}
+
+
+TEST(InferencerTest, Inherit_NonInterface2) {
+  auto source = R"(
+    class Foo : int -> bool {
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'int -> bool' cannot be inherited from");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 2);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 17);
+}
+
+
+TEST(InferencerTest, GenericClass_Basic) {
+  auto source = R"(
+    def main() {
+      let pair = new PairFloat[int]{ first: 10.0, second: 20 }
+      let first = pair.first
+      let second1 = pair.second
+      let second2 = pair.get_second()
+      pair.set_second(30)
+    }
+
+    class PairFloat[T] {
+      first: float
+      second: T
+
+      def get_second() => second
+      def set_second(value) { second = value }
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(inferencer.has_diagnostics());
+
+  ASSERT_GE(file_ast->declarations().size(), 2);
+  ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
+  auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
+  auto& main_statements = main_decl->func()->body()->statements();
+  ASSERT_GE(main_statements.size(), 5);
+
+  auto first_stmt = main_statements[1]->As<LetStatement>();
+  auto first_expr = first_stmt->expr();
+
+  auto second1_stmt = main_statements[2]->As<LetStatement>();
+  auto second1_expr = second1_stmt->expr();
+
+  auto second2_stmt = main_statements[3]->As<LetStatement>();
+  auto second2_expr = second2_stmt->expr();
+
+  Substitution subst;
+  TypeArena arena;
+  EXPECT_EQ(first_expr->type()->Zonk(&subst, true, &arena), context.float_type());
+  EXPECT_EQ(second1_expr->type()->Zonk(&subst, true, &arena), context.int_type());
+  EXPECT_EQ(second2_expr->type()->Zonk(&subst, true, &arena), context.int_type());
+}
+
+
+TEST(InferencerTest, GenericClass_MissingTypeArgument) {
+  auto source = R"(
+    def foo(x: Foo) {}
+    class Foo[T] {}
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "missing type arguments for 'Foo'");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 2);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 16);
+}
+
+
+TEST(InferencerTest, GenericClass_TooManyTypeArguments) {
+  auto source = R"(
+    def foo(x: Bar[int, float]) {}
+    class Bar[T] {}
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "wrong number of type arguments for 'Bar'");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 2);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 16);
+}
+
+
+TEST(InferencerTest, GenericClass_NonGenericParameterization) {
+  auto source = R"(
+    def foo(x: (int->int)[bool]) {}
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'int -> int' is not generic");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 2);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 17);
+}
+
+
+TEST(InferencerTest, GenericClass_CyclicEmbedding) {
+  auto source = R"(
+    class A[T] {
+      embed b: B[T]
+    }
+    class B[T] {
+      embed a: A[T]
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "cyclic embedding detected");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 16);
+}
+
+
+TEST(InferencerTest, GenericClass_CyclicInheritance) {
+  auto source = R"(
+    interface A[T] : B[T] {
+      def foo(): T
+    }
+
+    interface B[T] : A[T] {
+      def bar(): T
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "cyclic inheritance detected");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 6);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 22);
+}
+
+
+TEST(InferencerTest, GenericClass_CannotInherit1) {
+  auto source = R"(
+    class Foo : Bar[int] {}
+    class Bar[T] {}
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'Bar[int]' cannot be inherited from");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 2);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 17);
+}
+
+
+TEST(InferencerTest, GenericClass_CannotInherit2) {
+  auto source = R"(
+    class Foo[T] : Bar[T] {}
+    class Bar[S] {}
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'Bar[T]' cannot be inherited from");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 2);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 20);
 }
 
 

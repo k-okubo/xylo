@@ -373,7 +373,9 @@ TEST(ResolverTest, VisitFileAST_NewExpression) {
   auto return_expr = return_stmt->expr();
 
   auto construct_expr = return_expr->As<ConstructExpression>();
-  EXPECT_EQ(construct_expr->class_symbol(), class_symbol);
+  auto construct_type_repr = construct_expr->type_repr();
+  auto construct_symbol = construct_type_repr->As<NamedTypeRepr>()->symbol();
+  EXPECT_EQ(construct_symbol, class_symbol);
 }
 
 
@@ -673,10 +675,10 @@ TEST(ResolverTest, VisitFileAST_EmbeddedClosureClass) {
   auto source = R"(
     def outer(v) {
       def inner(v) {
-        new Foo{ Bar: {} }
+        new Foo{ bar: {} }
 
         class Foo {
-          embed Bar
+          embed bar: Bar
         }
       }
 

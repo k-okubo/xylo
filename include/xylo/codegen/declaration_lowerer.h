@@ -19,6 +19,8 @@ class DeclarationLowerer : public LoweringNode {
   llvm::Module* llvm_module() const { return root()->llvm_module(); }
   llvm::LLVMContext& llvm_context() const { return root()->llvm_context(); }
   llvm::Value* null_ptr() const { return root()->null_ptr(); }
+
+  llvm::Type* ZonkAndConvert(xylo::Type* type, bool function_as_pointer);
 };
 
 

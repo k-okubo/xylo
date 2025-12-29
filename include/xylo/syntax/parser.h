@@ -33,9 +33,11 @@ class Parser : public DiagnosticReporter {
 
   DeclarationPtr ParseInterfaceDeclaration(Scope* scope);
   DeclarationPtr ParseClassDeclaration(Scope* scope);
-  ClassFieldPtr ParseClassField(Scope* scope);
+  Vector<TypeParamPtr> ParseTypeParams(Scope* scope);
+  TypeParamPtr ParseOneTypeParam(Scope* scope);
+  Vector<SuperTypePtr> ParseSuperTypes();
   EmbeddedClassPtr ParseEmbeddedClass(Scope* scope);
-  Vector<SuperTypePtr> ParseSuperTypes(Scope* scope);
+  ClassFieldPtr ParseClassField(Scope* scope);
 
   FunctionDeclarationPtr ParseFunctionDeclaration(Scope* scope, bool needs_body = true);
   FunctionExpressionPtr ParseLambdaExpression(Scope* scope, bool needs_body = true);
@@ -50,7 +52,7 @@ class Parser : public DiagnosticReporter {
   ExpressionPtr ParseExpression(Scope* scope, int min_precedence = 0);
   ExpressionPtr ParseTernaryExpression(Scope* scope, int min_precedence);
   ExpressionPtr ParseBinaryExpression(Scope* scope, int min_precedence);
-  ExpressionPtr ParseUnaryExpression(Scope* scope, int min_precedence);
+  ExpressionPtr ParsePostfixExpression(Scope* scope, int min_precedence);
   ExpressionPtr ParsePrefixExpression(Scope* scope);
   ExpressionPtr ParsePrimaryExpression(Scope* scope);
   ExpressionPtr ParseConditionalExpression(Scope* scope);
@@ -61,8 +63,10 @@ class Parser : public DiagnosticReporter {
 
   TypeReprPtr ParseTypeRepr();
   TypeReprPtr ParseFunctionTypeRepr();
+  TypeReprPtr ParsePostfixTypeRepr();
   TypeReprPtr ParsePrimaryTypeRepr();
-  TypeReprPtr ParseTupleTypeRepr();
+  TypeReprPtr ParseParenTypeRepr();
+  TupleTypeReprPtr ParseTypeArgs();
 
  protected:
   void ErrorExpected(Token expected);

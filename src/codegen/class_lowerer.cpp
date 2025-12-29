@@ -19,14 +19,6 @@ llvm::StructType* ClassLowerer::GetOrCreateInstanceStruct() {
     }
   }
 
-  // ensure embedded and super classes are created
-  for (auto& embedded : xylo_class()->embeddeds()) {
-    LoweringNode::GetOrCreateInstanceStruct(embedded->symbol());
-  }
-  for (auto& super : xylo_class()->supers()) {
-    LoweringNode::GetOrCreateVTableStruct(super->symbol());
-  }
-
   // create struct
   instance_struct_ = CreateInstanceStruct();
   vtable_struct_ = CreateVTableStruct();
@@ -55,7 +47,7 @@ llvm::StructType* ClassLowerer::CreateInstanceStruct() {
 
   for (auto field : nominal->fields()) {
     auto index = field->index();
-    struct_entries[index + 1] = tc.Convert(field->type(), true);
+    struct_entries[index + 1] = ZonkAndConvert(field->type(), true);
   }
 
   return llvm::StructType::create(llvm_context(), tc.ToArrayRef(struct_entries), tc.ToStringRef(class_name()));

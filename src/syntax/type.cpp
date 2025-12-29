@@ -9,6 +9,8 @@ namespace xylo {
 
 
 MemberInfo* NominalType::GetMember(Identifier* member_name, bool include_super) const {
+  EnsureMembers();
+
   {
     auto member = GetDeclaredMember(member_name);
     if (member != nullptr) {
@@ -38,6 +40,8 @@ MemberInfo* NominalType::GetMember(Identifier* member_name, bool include_super) 
 
 
 MemberInfo* NominalType::GetDeclaredMember(Identifier* member_name) const {
+  EnsureMembers();
+
   auto it = member_map_.find(member_name);
   if (it != member_map_.end()) {
     return it->second.get();
@@ -47,6 +51,8 @@ MemberInfo* NominalType::GetDeclaredMember(Identifier* member_name) const {
 
 
 bool NominalType::GetMemberPath(Identifier* member_name, Vector<NominalSlot*>* out_path) const {
+  EnsureMembers();
+
   {
     auto member = GetDeclaredMember(member_name);
     if (member != nullptr) {
@@ -76,7 +82,9 @@ bool NominalType::GetMemberPath(Identifier* member_name, Vector<NominalSlot*>* o
 
 
 bool NominalType::GetSuperPath(NominalType* super, Vector<NominalSlot*>* out_path) const {
-  if (this == super) {
+  EnsureMembers();
+
+  if (this->equals(super)) {
     return true;
   }
 
@@ -93,6 +101,8 @@ bool NominalType::GetSuperPath(NominalType* super, Vector<NominalSlot*>* out_pat
 
 
 void NominalType::FindEmbededMembers(Identifier* member_name, Vector<MemberInfo*>* out_members) const {
+  EnsureMembers();
+
   for (auto embedded : embeddeds_) {
     auto embedded_type = embedded->type()->As<NominalType>();
     auto member = embedded_type->GetDeclaredMember(member_name);
@@ -106,6 +116,8 @@ void NominalType::FindEmbededMembers(Identifier* member_name, Vector<MemberInfo*
 
 
 void NominalType::FindSuperMembers(Identifier* member_name, Vector<MemberInfo*>* out_members) const {
+  EnsureMembers();
+
   for (auto super : supers_) {
     auto member = super->GetDeclaredMember(member_name);
     if (member != nullptr) {
@@ -117,6 +129,8 @@ void NominalType::FindSuperMembers(Identifier* member_name, Vector<MemberInfo*>*
 
 
 void NominalType::FindSuperMethods(Vector<MemberInfo*>* out_members) const {
+  EnsureMembers();
+
   for (auto super : supers_) {
     for (auto method : super->methods()) {
       out_members->push_back(method);
@@ -126,57 +140,48 @@ void NominalType::FindSuperMethods(Vector<MemberInfo*>* out_members) const {
 }
 
 
-MemberInfo* NominalType::AddField(Identifier* field_name, Type* field_type) {
-  if (GetDeclaredMember(field_name) != nullptr) {
-    return nullptr;
+bool NominalType::HasSuper(const NominalType* target) const {
+  auto self = this->canonical();
+  target = target->canonical();
+
+  if (self == target) {
+    return true;
   }
 
-  // field and embedded share the same numbering system
-  int index = fields_.size() + embeddeds_.size();
-  auto field = new MemberInfo(this, MemberInfo::Kind::kField, index, field_name, field_type);
+  for (auto super : self->supers_) {
+    if (super->HasSuper(target)) {
+      return true;
+    }
+  }
 
-  fields_.push_back(field);
-  member_map_.emplace(field_name, MemberInfoPtr(field));
-  return field;
+  return false;
 }
 
 
-MemberInfo* NominalType::AddMethod(Identifier* method_name, Type* method_type) {
-  if (GetDeclaredMember(method_name) != nullptr) {
-    return nullptr;
+bool NominalType::HasEmbedded(const NominalType* target) const {
+  auto self = this->canonical();
+  target = target->canonical();
+
+  if (self == target) {
+    return true;
   }
 
-  // method and super share the same numbering system
-  int index = methods_.size() + supers_.size();
-  auto method = new MemberInfo(this, MemberInfo::Kind::kMethod, index, method_name, method_type);
-
-  methods_.push_back(method);
-  member_map_.emplace(method_name, MemberInfoPtr(method));
-  return method;
-}
-
-
-MemberInfo* NominalType::AddEmbedded(Identifier* field_name, NominalType* clazz) {
-  // Due to member copy by substitution, embeddeds must be added before fields
-  if (!fields_.empty()) {
-    return nullptr;
+  for (auto embedded : self->embeddeds_) {
+    auto embedded_nominal = embedded->type()->As<NominalType>();
+    if (embedded_nominal->HasEmbedded(target)) {
+      return true;
+    }
   }
 
-  if (GetDeclaredMember(field_name) != nullptr) {
-    return nullptr;
-  }
-
-  // field and embedded share the same numbering system
-  int index = fields_.size() + embeddeds_.size();
-  auto embedded = new MemberInfo(this, MemberInfo::Kind::kEmbedding, index, field_name, clazz);
-
-  embeddeds_.push_back(embedded);
-  member_map_.emplace(field_name, MemberInfoPtr(embedded));
-  return embedded;
+  return false;
 }
 
 
 bool NominalType::AddSuper(NominalType* clazz) {
+  if (is_locked()) {
+    return false;
+  }
+
   // Due to index numbering requirements, supers must be added before methods
   if (!methods_.empty()) {
     return false;
@@ -192,13 +197,131 @@ bool NominalType::AddSuper(NominalType* clazz) {
 }
 
 
+MemberInfo* NominalType::AddEmbedded(Identifier* field_name, NominalType* clazz) {
+  if (is_locked()) {
+    return nullptr;
+  }
+
+  // Due to member copy by substitution, embeddeds must be added before fields
+  if (!fields_.empty()) {
+    return nullptr;
+  }
+
+  // field and embedded share the same numbering system
+  int index = fields_.size() + embeddeds_.size();
+  auto embedded = new MemberInfo(this, MemberInfo::Kind::kEmbedding, index, field_name, clazz);
+
+  embeddeds_.push_back(embedded);
+  auto [_, inserted] = member_map_.emplace(field_name, MemberInfoPtr(embedded));
+  return inserted ? embedded : nullptr;
+}
+
+
+MemberInfo* NominalType::AddField(Identifier* field_name, Type* field_type) {
+  if (is_locked()) {
+    return nullptr;
+  }
+
+  // field and embedded share the same numbering system
+  int index = fields_.size() + embeddeds_.size();
+  auto field = new MemberInfo(this, MemberInfo::Kind::kField, index, field_name, field_type);
+
+  fields_.push_back(field);
+  auto [_, inserted] = member_map_.emplace(field_name, MemberInfoPtr(field));
+  return inserted ? field : nullptr;
+}
+
+
+MemberInfo* NominalType::AddMethod(Identifier* method_name, Type* method_type) {
+  if (is_locked()) {
+    return nullptr;
+  }
+
+  // method and super share the same numbering system
+  int index = methods_.size() + supers_.size();
+  auto method = new MemberInfo(this, MemberInfo::Kind::kMethod, index, method_name, method_type);
+
+  methods_.push_back(method);
+  auto [_, inserted] = member_map_.emplace(method_name, MemberInfoPtr(method));
+  return inserted ? method : nullptr;
+}
+
+
+void NominalType::CopyMembersFromOrigin() {
+  xylo_contract(origin_ != nullptr);
+  xylo_contract(substitution_ != nullptr);
+  xylo_contract(!member_copied_);
+  xylo_contract(origin_->is_locked());
+
+  origin_->EnsureMembers();
+  auto subst = substitution();
+  auto arena = this->arena();
+
+  for (auto super : origin_->supers()) {
+    auto sbsted_super = subst->Apply(super, arena);
+    AddSuper(sbsted_super->As<NominalType>());
+  }
+
+  for (auto embedded : origin_->embeddeds()) {
+    auto sbsted_type = subst->Apply(embedded->type(), arena);
+    AddEmbedded(embedded->name(), sbsted_type->As<NominalType>());
+  }
+
+  for (auto field : origin_->fields()) {
+    auto sbsted_type = subst->Apply(field->type(), arena);
+    AddField(field->name(), sbsted_type);
+  }
+
+  for (auto method : origin_->methods()) {
+    auto sbsted_type = method->type() ? subst->Apply(method->type(), arena, true) : nullptr;
+    auto member_info = AddMethod(method->name(), sbsted_type);
+    if (sbsted_type == nullptr) {
+      member_info->set_type_resolver([=]() {
+        method->resolve_type();
+        member_info->set_type(subst->Apply(method->type(), arena, true));
+      });
+    }
+  }
+
+  member_copied_ = true;
+  lock();
+}
+
+
 bool ErrorType::equals(const Type* other) const {
   return true;
 }
 
 
 bool NominalType::equals(const Type* other) const {
-  return this == other;
+  if (this == other) {
+    return true;
+  }
+
+  if (other->kind() != Kind::kNominal) {
+    return false;
+  }
+  auto other_nominal = other->As<NominalType>();
+
+  if (this->origin() != nullptr && this->origin() == other_nominal->origin()) {
+    auto& this_args = this->substitution()->args();
+    auto& other_args = other_nominal->substitution()->args();
+
+    if (this_args.size() != other_args.size()) {
+      return false;
+    }
+
+    for (size_t i = 0; i < this_args.size(); ++i) {
+      if (!this_args[i]->equals(other_args[i])) {
+        return false;
+      }
+    }
+
+    return true;
+
+  } else {
+    return false;
+  }
 }
 
 
@@ -330,6 +453,25 @@ struct SubtypingProc {
 };
 
 
+template <typename P>
+static bool ApplySubtypingRules(Substitution* src_subst, Substitution* dst_subst, const P& proc) {
+  auto& src_args = src_subst->args();
+  auto& dst_args = dst_subst->args();
+
+  if (src_args.size() != dst_args.size()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < src_args.size(); ++i) {
+    if (!proc.recurse(src_args[i], dst_args[i], proc)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
 template <typename S, typename D, typename P>
 static bool ApplySubtypingRules(S src, D dst, const P& proc) {
   // consider the same instance to be a subtype
@@ -345,11 +487,21 @@ static bool ApplySubtypingRules(S src, D dst, const P& proc) {
   // nominal to nominal
   if (src->kind() == Type::Kind::kNominal && dst->kind() == Type::Kind::kNominal) {
     auto src_nominal = src->template As<NominalType>();
+    auto dst_nominal = dst->template As<NominalType>();
+
+    if (src_nominal->origin() != nullptr && src_nominal->origin() == dst_nominal->origin()) {
+      if (ApplySubtypingRules(src_nominal->substitution(), dst_nominal->substitution(), proc) &&
+          ApplySubtypingRules(dst_nominal->substitution(), src_nominal->substitution(), proc)) {
+        return true;
+      }
+    }
+
     for (auto src_super : src_nominal->supers()) {
       if (proc.recurse(src_super, dst, proc)) {
         return true;
       }
     }
+
     return false;
   }
 
@@ -478,7 +630,17 @@ static bool ApplySubtypingRules(S src, D dst, const P& proc) {
     if (src->kind() == Type::Kind::kTyvar && dst->kind() == Type::Kind::kTyvar) {
       auto src_var = src->template As<TypeVariable>();
       auto dst_var = dst->template As<TypeVariable>();
-      return proc.onTyvarBoth(src_var, dst_var);
+
+      // ensure that tyvars belonging to inner scopes do not appear in upper/lower bound
+      if (src_var->scope() == dst_var->scope()) {
+        return proc.onTyvarBoth(src_var, dst_var);
+      } else if (src_var->scope()->is_inner_than(dst_var->scope())) {
+        return proc.onTyvarSrc(src_var, dst);
+      } else if (dst_var->scope()->is_inner_than(src_var->scope())) {
+        return proc.onTyvarDst(src, dst_var);
+      } else {
+        return false;
+      }
     }
 
     if (src->kind() == Type::Kind::kTyvar) {
@@ -960,6 +1122,10 @@ bool VariableBase::CanConstrainUpperBound(const Type* new_ub, TypePairSet* visit
     return true;
   }
 
+  if (is_locked()) {
+    return false;
+  }
+
   // circular types are prohibited
   if (OccursIn(new_ub, this, false)) {
     return false;
@@ -985,8 +1151,13 @@ bool VariableBase::CanConstrainLowerBound(const Type* new_lb, TypePairSet* visit
   xylo_contract(new_lb->kind() != Type::Kind::kUnion);
   xylo_contract(new_lb->kind() != Type::Kind::kScheme);
   xylo_contract(!(this->kind() == Type::Kind::kTyvar && new_lb->kind() == Type::Kind::kMetavar));
+
   if (new_lb->IsSubtypeOf(lower_bound())) {
     return true;
+  }
+
+  if (is_locked()) {
+    return false;
   }
 
   // circular types are prohibited
@@ -1020,6 +1191,10 @@ bool VariableBase::ConstrainUpperBound(Type* new_ub, TypePairSet* visited) {
       return true;
     }
 
+    if (is_locked()) {
+      return false;
+    }
+
     // functionize if needed
     auto new_ub_func = new_ub->As<FunctionType>();
     Functionize(new_ub_func);
@@ -1039,6 +1214,10 @@ bool VariableBase::ConstrainUpperBound(Type* new_ub, TypePairSet* visited) {
     // already constrained
     if (upper_bound()->IsSubtypeOf(new_ub)) {
       return true;
+    }
+
+    if (is_locked()) {
+      return false;
     }
 
     // new_ub must be a supertype of lower bound
@@ -1078,6 +1257,10 @@ bool VariableBase::ConstrainLowerBound(Type* new_lb, TypePairSet* visited) {
       return true;
     }
 
+    if (is_locked()) {
+      return false;
+    }
+
     // functionize if needed
     auto new_lb_func = new_lb->As<FunctionType>();
     Functionize(new_lb_func);
@@ -1097,6 +1280,10 @@ bool VariableBase::ConstrainLowerBound(Type* new_lb, TypePairSet* visited) {
     // already constrained
     if (new_lb->IsSubtypeOf(lower_bound())) {
       return true;
+    }
+
+    if (is_locked()) {
+      return false;
     }
 
     // new_lb must be a subtype of upper bound
@@ -1125,6 +1312,10 @@ bool VariableBase::ConstrainBothBounds(VariableBase* dst, TypePairSet* visited) 
 
   if (src->IsSubtypeOf(dst)) {
     return true;
+  }
+
+  if (src->is_locked() || dst->is_locked()) {
+    return false;
   }
 
   // xylo_check(src->lower_bound_->ConstrainSubtypeOf(dst->owner_, visited));
@@ -1169,16 +1360,6 @@ bool VariableBase::ConstrainBothBounds(VariableBase* dst, TypePairSet* visited) 
 
 
 bool VariableBase::AddToUpperBound(Type* new_ub, TypePairSet* visited) {
-  // does not have references to TypeVariables from inner scopes
-  if (this->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kTyvar) {
-    auto this_tyvar = this->As<TypeVariable>();
-    auto ub_tyvar = new_ub->As<TypeVariable>();
-
-    if (ub_tyvar->scope()->is_inner_than(this_tyvar->scope())) {
-      return true;
-    }
-  }
-
   // change type variables in MemberConstraint to outer type variables
   if (this->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kMemberConstraint) {
     auto this_tyvar = this->As<TypeVariable>();
@@ -1204,16 +1385,6 @@ bool VariableBase::AddToUpperBound(Type* new_ub, TypePairSet* visited) {
 
 
 bool VariableBase::AddToLowerBound(Type* new_lb, TypePairSet* visited) {
-  // does not have references to TypeVariables from inner scopes
-  if (this->kind() == Type::Kind::kTyvar && new_lb->kind() == Type::Kind::kTyvar) {
-    auto this_tyvar = this->As<TypeVariable>();
-    auto lb_tyvar = new_lb->As<TypeVariable>();
-
-    if (lb_tyvar->scope()->is_inner_than(this_tyvar->scope())) {
-      return true;
-    }
-  }
-
   // Add new_lb's ancestors to the upper bound to enable sibling checking for types added to lb in the future.
   auto ancestors = std::make_unique<UnionType>();
   CollectTopAncestors(new_lb, ancestors.get());
@@ -1650,26 +1821,36 @@ static void NormalizeLowerBound(UnionType* lower_bound, Type* lb) {
 }
 
 
-Type* Type::Instantiate(TypeArena* arena, Substitution* parent) const {
+Type* Type::Instantiate(TypeArena* arena, const Vector<Type*>& args, Substitution* parent) const {
+  xylo_contract(args.empty());
   return const_cast<Type*>(this);
 }
 
 
-Type* TypeScheme::Instantiate(TypeArena* arena, Substitution* parent) const {
-  InstantiatedInfoPtr instantiated_info = std::make_unique<InstantiatedInfo>();
+Type* TypeScheme::Instantiate(TypeArena* arena, const Vector<Type*>& args, Substitution* parent) const {
+  xylo_contract(args.empty() || args.size() == vars().size());
+  bool use_metavars = args.empty();
 
   // prepare subst: scheme->vars() => fresh metavars
   Substitution subst(parent);
-  for (auto tyvar : this->vars()) {
-    auto metavar = new TypeMetavar();
-    xylo_check(subst.Insert(tyvar, metavar));
-    instantiated_info->vars.push_back(metavar);
-    arena->adopt_type(TypePtr(metavar));
+  InstantiatedInfoPtr instantiated_info = std::make_unique<InstantiatedInfo>();
+
+  for (size_t i = 0; i < vars().size(); ++i) {
+    auto tyvar = vars()[i];
+    auto arg = use_metavars ? new TypeMetavar() : args[i];
+    xylo_check(subst.Insert(tyvar, arg));
+    instantiated_info->vars.push_back(arg);
+    if (use_metavars) {
+      arena->adopt_type(TypePtr(arg));
+    }
   }
 
   // restore bounds
-  for (auto [tyvar, fresh] : subst.entries()) {
-    auto metavar = fresh->As<TypeMetavar>();
+  for (auto [tyvar, arg] : subst.entries()) {
+    if (arg->kind() != Type::Kind::kMetavar) {
+      continue;
+    }
+    auto metavar = arg->As<TypeMetavar>();
 
     // substitute upper bounds
     auto upper_bound = new IntersectionType();
@@ -1700,14 +1881,14 @@ Type* TypeScheme::Instantiate(TypeArena* arena, Substitution* parent) const {
 }
 
 
-Type* TypeApplication::Instantiate(TypeArena* arena, Substitution* parent) const {
+Type* TypeApplication::Instantiate(TypeArena* arena, const Vector<Type*>& args, Substitution* parent) const {
   xylo_contract(substitution()->parent() == nullptr);
   substitution()->set_parent(parent);
   Finally _([this]() {
     substitution()->set_parent(nullptr);
   });
 
-  return target()->Instantiate(arena, substitution());
+  return target()->Instantiate(arena, args, substitution());
 }
 
 
@@ -1740,45 +1921,17 @@ Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const
 
     case Type::Kind::kNominal: {
       auto nominal = type->As<NominalType>();
-      if (nominal->scope() == nullptr || !nominal->scope()->is_inner_than_equal(this->scope_)) {
+      if (!(nominal->is_generic() || nominal->scope()->is_inner_than_equal(this->scope_))) {
         return type;
       }
+      // the scope of type parameters is a child of the scope of nominal types
+      xylo_contract(!nominal->is_generic() || this->scope_->parent() == nominal->scope());
 
-      // The nominal type is defined within this substitution's scope,
-      // so we need to apply the substitution to its members.
       auto new_nominal = new NominalType(nominal->category(), nominal->name());
       new_nominal->set_scope(nominal->scope());
       new_nominal->set_origin(nominal);
       new_nominal->set_substitution(this->clone());
       arena->adopt_type(TypePtr(new_nominal));
-      auto sbst = new_nominal->substitution();
-
-      for (auto super : nominal->supers()) {
-        auto sbsted_super = sbst->Apply(super, arena);
-        new_nominal->AddSuper(sbsted_super->As<NominalType>());
-      }
-
-      for (auto embedded : nominal->embeddeds()) {
-        auto sbsted_type = sbst->Apply(embedded->type(), arena);
-        new_nominal->AddEmbedded(embedded->name(), sbsted_type->As<NominalType>());
-      }
-
-      for (auto field : nominal->fields()) {
-        auto sbsted_type = sbst->Apply(field->type(), arena);
-        new_nominal->AddField(field->name(), sbsted_type);
-      }
-
-      for (auto method : nominal->methods()) {
-        auto sbsted_type = method->type() ? sbst->Apply(method->type(), arena, true) : nullptr;
-        auto member_info = new_nominal->AddMethod(method->name(), sbsted_type);
-        if (sbsted_type == nullptr) {
-          member_info->set_type_resolver([=]() {
-            method->resolve_type();
-            member_info->set_type(sbst->Apply(method->type(), arena, true));
-          });
-        }
-      }
-
       return new_nominal;
     }
 
@@ -2036,7 +2189,7 @@ Type* TypeApplication::Zonk(const Substitution* subst, bool strict, TypeArena* a
 }
 
 
-bool Type::is_monotype() const {
+bool Type::is_closed_type() const {
   switch (kind()) {
     case Type::Kind::kError:
       return true;
@@ -2046,23 +2199,27 @@ bool Type::is_monotype() const {
 
     case Type::Kind::kFunction: {
       auto func = As<FunctionType>();
-      return func->params_type()->is_monotype() && func->return_type()->is_monotype();
+      return func->params_type()->is_closed_type() && func->return_type()->is_closed_type();
     }
 
     case Type::Kind::kTuple: {
       auto tuple = As<TupleType>();
       for (auto elem : tuple->elements()) {
-        if (!elem->is_monotype()) {
+        if (!elem->is_closed_type()) {
           return false;
         }
       }
       return true;
     }
 
+    case Type::Kind::kTyvar: {
+      auto tyvar = As<TypeVariable>();
+      return tyvar->is_locked();
+    }
+
     case Type::Kind::kMemberConstraint:
     case Type::Kind::kIntersection:
     case Type::Kind::kUnion:
-    case Type::Kind::kTyvar:
     case Type::Kind::kMetavar:
     case Type::Kind::kScheme:
     case Type::Kind::kApplication:
@@ -2272,7 +2429,7 @@ static Type* FindExactType(T* var) {
 
 
 template <class T, class O, class S, class F>
-std::string PrintCommonVar(T type, bool paren, bool is_metavar, const O& opt, S* status, F print) {
+std::string PrintCommonVar(T type, Identifier* name, bool paren, bool is_metavar, const O& opt, S* status, F print) {
   if (!opt.verbose) {
     if (type->func_shape() != nullptr) {
       return print(type->func_shape(), paren, status);
@@ -2307,20 +2464,27 @@ std::string PrintCommonVar(T type, bool paren, bool is_metavar, const O& opt, S*
     }
   }
 
-  auto n = status->name_map->size();
-  // A, B, ..., R, S, T1, T2, ...
-  auto name = (n < 19) ? std::string({static_cast<char>('A' + n)}) : "T" + std::to_string(n - 18);
-  if (opt.verbose && is_metavar) {
-    name += "'";
+  std::string name_str;
+
+  if (name != nullptr) {
+    name_str = name->str().cpp_str();
+  } else {
+    auto n = status->name_map->size();
+    // A, B, ..., R, S, T1, T2, ...
+    name_str = (n < 19) ? std::string({static_cast<char>('A' + n)}) : "T" + std::to_string(n - 18);
+    if (opt.verbose && is_metavar) {
+      name_str += "'";
+    }
   }
-  status->name_map->emplace(type, name);
+
+  status->name_map->emplace(type, name_str);
   status->appeared.push_back(type);
-  return name;
+  return name_str;
 }
 
 
 std::string TypePrinter::Print(const TypeVariable* type, bool paren, Status* status) const {
-  auto str = PrintCommonVar(type, paren, false, options_, status, [this](auto t, bool p, Status* s) {
+  auto str = PrintCommonVar(type, type->name(), paren, false, options_, status, [this](auto t, bool p, Status* s) {
     return Print(t, p, s);
   });
   // str += std::to_string(type->scope()->depth());
@@ -2329,7 +2493,7 @@ std::string TypePrinter::Print(const TypeVariable* type, bool paren, Status* sta
 
 
 std::string TypePrinter::Print(const TypeMetavar* type, bool paren, Status* status) const {
-  return PrintCommonVar(type, paren, true, options_, status, [this](auto t, bool p, Status* s) {
+  return PrintCommonVar(type, nullptr, paren, true, options_, status, [this](auto t, bool p, Status* s) {
     return Print(t, p, s);
   });
 }
@@ -2379,15 +2543,29 @@ std::string TypePrinter::Print(const Substitution* subst, Status* status) const 
   std::string str = "";
   str += "[";
   bool first = true;
-  for (auto& [param, arg] : subst->entries()) {
-    if (!first) {
-      str += ", ";
+
+  if (options_.verbose) {
+    for (auto& [param, arg] : subst->entries()) {
+      if (!first) {
+        str += ", ";
+      }
+      first = false;
+
+      str += Print(param, false, status);
+      str += " := ";
+      str += Print(arg, false, status);
     }
-    first = false;
-    str += Print(param, false, status);
-    str += " := ";
-    str += Print(arg, false, status);
+  } else {
+    for (auto arg : subst->args()) {
+      if (!first) {
+        str += ", ";
+      }
+      first = false;
+
+      str += Print(arg, false, status);
+    }
   }
+
   str += "]";
 
   return str;

@@ -705,20 +705,20 @@ TEST(ClassTest, CLassInClass) {
 TEST(ClassTest, Embedding_PromotedFieldRead) {
   auto source = R"(
     class Bar {
-      bar: int
+      bar_field: int
     }
 
     class Foo {
-      foo: int
-      embed Bar
+      foo_field: int
+      embed bar: Bar
     }
 
     def main() {
       let foo = new Foo {
-        foo: 12,
-        Bar: { bar: 30 },
+        foo_field: 12,
+        bar: { bar_field: 30 },
       }
-      return foo.foo + foo.bar
+      return foo.foo_field + foo.bar_field
     }
   )";
 
@@ -730,20 +730,20 @@ TEST(ClassTest, Embedding_PromotedFieldRead) {
 TEST(ClassTest, Embedding_ExplicitFieldRead) {
   auto source = R"(
     class Bar {
-      bar: int
+      bar_field: int
     }
 
     class Foo {
-      foo: int
-      embed Bar
+      foo_field: int
+      embed bar: Bar
     }
 
     def main() {
       let foo = new Foo {
-        foo: 12,
-        Bar: { bar: 30 },
+        foo_field: 12,
+        bar: { bar_field: 30 },
       }
-      return foo.foo + foo.Bar.bar
+      return foo.foo_field + foo.bar.bar_field
     }
   )";
 
@@ -755,22 +755,22 @@ TEST(ClassTest, Embedding_ExplicitFieldRead) {
 TEST(ClassTest, Embedding_PromotedFieldWrite) {
   auto source = R"(
     class Bar {
-      bar: int
+      bar_field: int
     }
 
     class Foo {
-      foo: int
-      embed Bar
+      foo_field: int
+      embed bar: Bar
     }
 
     def main() {
       let foo = new Foo {
-        foo: 0,
-        Bar: { bar: 0 },
+        foo_field: 0,
+        bar: { bar_field: 0 },
       }
-      foo.foo = 12
-      foo.bar = 30
-      return foo.foo + foo.bar
+      foo.foo_field = 12
+      foo.bar_field = 30
+      return foo.foo_field + foo.bar_field
     }
   )";
 
@@ -782,22 +782,22 @@ TEST(ClassTest, Embedding_PromotedFieldWrite) {
 TEST(ClassTest, Embedding_ExplicitFieldWrite) {
   auto source = R"(
     class Bar {
-      bar: int
+      bar_field: int
     }
 
     class Foo {
-      foo: int
-      embed Bar
+      foo_field: int
+      embed bar: Bar
     }
 
     def main() {
       let foo = new Foo {
-        foo: 0,
-        Bar: { bar: 0 },
+        foo_field: 0,
+        bar: { bar_field: 0 },
       }
-      foo.foo = 12
-      foo.Bar.bar = 30
-      return foo.foo + foo.Bar.bar
+      foo.foo_field = 12
+      foo.bar.bar_field = 30
+      return foo.foo_field + foo.bar.bar_field
     }
   )";
 
@@ -809,27 +809,27 @@ TEST(ClassTest, Embedding_ExplicitFieldWrite) {
 TEST(ClassTest, Embedding_PromotedMethod) {
   auto source = R"(
     class Bar {
-      bar: int
-      def get_bar() {
-        return bar
+      bar_field: int
+      def get_bar_field() {
+        return bar_field
       }
     }
 
     class Foo {
-      foo: int
-      embed Bar
+      foo_field: int
+      embed bar: Bar
 
-      def get_foo() {
-        return foo
+      def get_foo_field() {
+        return foo_field
       }
     }
 
     def main() {
       let foo = new Foo {
-        foo: 12,
-        Bar: { bar: 30 },
+        foo_field: 12,
+        bar: { bar_field: 30 },
       }
-      return foo.get_foo() + foo.get_bar()
+      return foo.get_foo_field() + foo.get_bar_field()
     }
   )";
 
@@ -841,27 +841,27 @@ TEST(ClassTest, Embedding_PromotedMethod) {
 TEST(ClassTest, Embedding_ExplicitMethod) {
   auto source = R"(
     class Bar {
-      bar: int
-      def get_bar() {
-        return bar
+      bar_field: int
+      def get_bar_field() {
+        return bar_field
       }
     }
 
     class Foo {
-      foo: int
-      embed Bar
+      foo_field: int
+      embed bar: Bar
 
-      def get_foo() {
-        return foo
+      def get_foo_field() {
+        return foo_field
       }
     }
 
     def main() {
       let foo = new Foo {
-        foo: 12,
-        Bar: { bar: 30 },
+        foo_field: 12,
+        bar: { bar_field: 30 },
       }
-      return foo.get_foo() + foo.Bar.get_bar()
+      return foo.get_foo_field() + foo.bar.get_bar_field()
     }
   )";
 
@@ -878,13 +878,13 @@ TEST(ClassTest, Embedding_Priority) {
 
     class Foo {
       value: int
-      embed Bar
+      embed bar: Bar
     }
 
     def main() {
       let foo = new Foo {
         value: 10,
-        Bar: { value: 30 },
+        bar: { value: 30 },
       }
       return foo.value
     }
@@ -906,10 +906,10 @@ TEST(ClassTest, Embedding_DifferentScope) {
       return inner(v)
 
       def inner(v) {
-        return new Foo{ Bar: { value: v } }
+        return new Foo{ bar: { value: v } }
 
         class Foo {
-          embed Bar
+          embed bar: Bar
         }
       }
 
@@ -936,10 +936,10 @@ TEST(ClassTest, Embedding_ClosureClass) {
       return inner(v)
 
       def inner(v) {
-        return new Foo{ Bar: {} }
+        return new Foo{ bar: {} }
 
         class Foo {
-          embed Bar
+          embed bar: Bar
         }
       }
 

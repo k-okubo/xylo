@@ -16,8 +16,8 @@ class XyloContext {
  public:
   XyloContext() :
       identifier_pool_(),
-      class_table_(),
       root_scope_(),
+      arena_(),
       unit_symbol_(Symbol::Kind::kType, &root_scope_, InternIdentifier("unit")),
       bool_symbol_(Symbol::Kind::kType, &root_scope_, InternIdentifier("bool")),
       comparable_symbol_(Symbol::Kind::kType, &root_scope_, InternIdentifier("Comparable")),
@@ -33,6 +33,15 @@ class XyloContext {
       float_type_(NominalType::Category::kPrimitive, float_symbol_.name()),
       int_type_(NominalType::Category::kPrimitive, int_symbol_.name()),
       string_type_(NominalType::Category::kPrimitive, string_symbol_.name()) {
+    // set primitive type scopes
+    unit_type_.set_scope(&root_scope_);
+    bool_type_.set_scope(&root_scope_);
+    comparable_type_.set_scope(&root_scope_);
+    numeric_type_.set_scope(&root_scope_);
+    float_type_.set_scope(&root_scope_);
+    int_type_.set_scope(&root_scope_);
+    string_type_.set_scope(&root_scope_);
+
     // pseudo inheritance relationships
     numeric_type_.AddSuper(&comparable_type_);
     float_type_.AddSuper(&numeric_type_);
@@ -57,9 +66,8 @@ class XyloContext {
   Identifier* InternIdentifier(const HStringView& strview) { return identifier_pool_.Intern(strview); }
   Identifier* InternIdentifier(const char* str) { return identifier_pool_.Intern(HStringView(str)); }
 
-  bool RegisterClass(Symbol* symbol, TypePtr&& type) { return class_table_.emplace(symbol, std::move(type)).second; }
-
   Scope* root_scope() { return &root_scope_; }
+  TypeArena* arena() { return &arena_; }
 
   Symbol* unit_symbol() { return &unit_symbol_; }
   Symbol* bool_symbol() { return &bool_symbol_; }
@@ -81,9 +89,9 @@ class XyloContext {
 
  private:
   IdentifierPool identifier_pool_;
-  Map<Symbol*, TypePtr> class_table_;
 
   Scope root_scope_;
+  TypeArena arena_;
 
   Symbol unit_symbol_;
   Symbol bool_symbol_;

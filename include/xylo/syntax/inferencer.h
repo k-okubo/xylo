@@ -72,6 +72,7 @@ class Inferencer : public DiagnosticReporter {
   void CheckOverrides(NominalType* nominal_type, const ClassDeclareInfo& declare_info, bool is_class);
 
   void VisitDeclaration(Declaration* decl);
+  void VisitInterfaceDeclaration(InterfaceDeclaration* decl);
   void VisitClassDeclaration(ClassDeclaration* decl);
   void VisitFunctionDeclaration(FunctionDeclaration* decl);
 
@@ -113,6 +114,7 @@ class Inferencer : public DiagnosticReporter {
   Type* ConvertDeclarableTypeRepr(TypeRepr* type_repr, TypeArena* arena);
   Type* ConvertTypeRepr(TypeRepr* type_repr, TypeArena* arena);
   Type* ConvertNamedTypeRepr(NamedTypeRepr* type_repr, TypeArena* arena);
+  Type* ConvertTypeApplicationRepr(TypeApplicationRepr* type_repr, TypeArena* arena);
   FunctionType* ConvertFunctionTypeRepr(FunctionTypeRepr* type_repr, TypeArena* arena);
   TupleType* ConvertTupleTypeRepr(TupleTypeRepr* type_repr, TypeArena* arena);
 

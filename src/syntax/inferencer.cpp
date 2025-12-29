@@ -32,18 +32,47 @@ void Inferencer::VisitFileAST(FileAST* file_ast) {
 }
 
 
+TypeVariable* CreateTypeParamVar(TypeParam* type_param, TypeArena* arena) {
+  auto var = new TypeVariable(type_param->symbol()->scope());
+  var->set_name(type_param->symbol()->name());
+  var->lock();
+  arena->adopt_type(TypePtr(var));
+  type_param->symbol()->set_type(var);
+
+  return var;
+}
+
+
+Type* GeneralizeNominal(NominalType* nominal_type, const Vector<TypeParamPtr>& type_params, TypeArena* arena) {
+  if (type_params.empty()) {
+    return nominal_type;
+  }
+
+  nominal_type->set_generic(true);
+
+  Vector<TypeVariable*> type_param_vars;
+  for (auto& type_param : type_params) {
+    auto var = CreateTypeParamVar(type_param.get(), arena);
+    type_param_vars.push_back(var);
+  }
+
+  auto scheme = new TypeScheme(std::move(type_param_vars), nominal_type);
+  arena->adopt_type(TypePtr(scheme));
+
+  return scheme;
+}
+
+
 void Inferencer::PreVisitInterfaceCreation(InterfaceDeclaration* decl) {
   xylo_contract(decl->symbol()->type() == nullptr);
 
   auto interface_type = new NominalType(NominalType::Category::kInterface, decl->symbol()->name());
   interface_type->set_scope(decl->symbol()->scope());
   decl->symbol()->set_type(interface_type);
-  context_->RegisterClass(decl->symbol(), TypePtr(interface_type));
+  context_->arena()->adopt_type(TypePtr(interface_type));
 
-  auto resolver = [=, this]() {
-    PreVisitInterfaceDeclaration(decl);
-  };
-  RegisterEntityState(decl->symbol(), EntityState(resolver));
+  decl->set_interface_type(interface_type);
+  decl->symbol()->set_type(GeneralizeNominal(interface_type, decl->type_params(), context_->arena()));
 }
 
 
@@ -52,13 +81,10 @@ void Inferencer::PreVisitClassCreation(ClassDeclaration* decl) {
 
   auto class_type = new NominalType(NominalType::Category::kClass, decl->symbol()->name());
   class_type->set_scope(decl->symbol()->scope());
-  decl->symbol()->set_type(class_type);
-  context_->RegisterClass(decl->symbol(), TypePtr(class_type));
+  context_->arena()->adopt_type(TypePtr(class_type));
 
-  auto resolver = [=, this]() {
-    PreVisitClassDeclaration(decl);
-  };
-  RegisterEntityState(decl->symbol(), EntityState(resolver));
+  decl->set_class_type(class_type);
+  decl->symbol()->set_type(GeneralizeNominal(class_type, decl->type_params(), context_->arena()));
 }
 
 
@@ -80,50 +106,24 @@ void Inferencer::PreVisitDeclaration(Declaration* decl) {
 
 
 void Inferencer::PreVisitInterfaceDeclaration(InterfaceDeclaration* decl) {
-  {
-    auto& state = GetEntityState(decl->symbol());
-    if (state.done || state.in_progress) {
-      return;
-    }
-    state.in_progress = true;
-  }
-
-  ClassDeclareInfo declare_info{
-    .class_decl = decl,
-    .method_decls = Map<Identifier*, FunctionDeclaration*>(),
-  };
-
   xylo_contract(decl->symbol()->type() != nullptr);
-  auto interface_type = decl->symbol()->type()->As<NominalType>();
+  xylo_contract(decl->interface_type() != nullptr);
+  auto interface_type = decl->interface_type();
 
   RegisterSuperTypes(interface_type, decl->supers());
 
   for (auto& method_decl : decl->methods()) {
     RegisterMethod(interface_type, method_decl.get());
-    declare_info.method_decls.emplace(method_decl->symbol()->name(), method_decl.get());
   }
 
-  CheckOverrides(interface_type, declare_info, false);
-
-  {
-    auto& state = GetEntityState(decl->symbol());
-    state.in_progress = false;
-    state.done = true;
-  }
+  interface_type->lock();
 }
 
 
 void Inferencer::PreVisitClassDeclaration(ClassDeclaration* decl) {
-  {
-    auto& state = GetEntityState(decl->symbol());
-    if (state.done || state.in_progress) {
-      return;
-    }
-    state.in_progress = true;
-  }
-
   xylo_contract(decl->symbol()->type() != nullptr);
-  auto class_type = decl->symbol()->type()->As<NominalType>();
+  xylo_contract(decl->class_type() != nullptr);
+  auto class_type = decl->class_type();
 
   RegisterSuperTypes(class_type, decl->supers());
   RegisterEmbeddeds(class_type, decl->embeddeds());
@@ -161,11 +161,7 @@ void Inferencer::PreVisitClassDeclaration(ClassDeclaration* decl) {
     }
   }
 
-  {
-    auto& state = GetEntityState(decl->symbol());
-    state.in_progress = false;
-    state.done = true;
-  }
+  class_type->lock();
 }
 
 
@@ -181,23 +177,27 @@ void Inferencer::PreVisitFunctionDeclaration(FunctionDeclaration* decl) {
 
 void Inferencer::RegisterSuperTypes(NominalType* nominal_type, const Vector<SuperTypePtr>& super_types) {
   for (auto& super : super_types) {
-    auto super_symbol = super->symbol();
-    xylo_contract(super_symbol->type() != nullptr);
-    auto super_nominal = super_symbol->type()->As<NominalType>();
-
-    if (super_nominal->category() != NominalType::Category::kInterface) {
-      ReportError(super->position(), "type '" + super_nominal->name()->str().cpp_str() + "' cannot be inherited from");
+    auto super_type = ConvertDeclarableTypeRepr(super->type_repr(), nominal_type->arena());
+    if (super_type->kind() == Type::Kind::kError) {
       continue;
     }
 
-    auto& state = GetEntityState(super_symbol);
-    if (!state.done) {
-      if (state.in_progress) {
-        ReportError(super->position(), "cyclic inheritance detected");
-        continue;
-      } else {
-        state.resolve();
-      }
+    if (super_type->kind() != Type::Kind::kNominal) {
+      TypePrinter tp;
+      ReportError(super->type_repr()->position(), "type '" + tp(super_type) + "' cannot be inherited from");
+      continue;
+    }
+
+    auto super_nominal = super_type->As<NominalType>();
+    if (super_nominal->category() != NominalType::Category::kInterface) {
+      TypePrinter tp;
+      ReportError(super->type_repr()->position(), "type '" + tp(super_type) + "' cannot be inherited from");
+      continue;
+    }
+
+    if (super_nominal->HasSuper(nominal_type)) {
+      ReportError(super->type_repr()->position(), "cyclic inheritance detected");
+      continue;
     }
 
     xylo_check(nominal_type->AddSuper(super_nominal));
@@ -206,27 +206,35 @@ void Inferencer::RegisterSuperTypes(NominalType* nominal_type, const Vector<Supe
 
 
 void Inferencer::RegisterEmbeddeds(NominalType* nominal_type, const Vector<EmbeddedClassPtr>& embeddeds) {
-  for (auto& embedded : embeddeds) {
-    auto embedded_symbol = embedded->symbol();
-    xylo_contract(embedded_symbol->type() != nullptr);
-    auto embedded_nominal = embedded_symbol->type()->As<NominalType>();
+  auto position = [](const EmbeddedClassPtr& embedded) {
+    return embedded->type_repr()->position();
+  };
 
-    if (embedded_nominal->category() != NominalType::Category::kClass) {
-      ReportError(embedded->position(), "type '" + embedded_nominal->name()->str().cpp_str() + "' cannot be embedded");
+  for (auto& embedded : embeddeds) {
+    auto embedded_type = ConvertDeclarableTypeRepr(embedded->type_repr(), nominal_type->arena());
+    if (embedded_type->kind() == Type::Kind::kError) {
       continue;
     }
 
-    auto& state = GetEntityState(embedded_symbol);
-    if (!state.done) {
-      if (state.in_progress) {
-        ReportError(embedded->position(), "cyclic embedding detected");
-        continue;
-      } else {
-        state.resolve();
-      }
+    if (embedded_type->kind() != Type::Kind::kNominal) {
+      TypePrinter tp;
+      ReportError(position(embedded), "type '" + tp(embedded_type) + "' cannot be embedded");
+      continue;
     }
 
-    xylo_check(nominal_type->AddEmbedded(embedded->name(), embedded_nominal));
+    auto embedded_nominal = embedded_type->As<NominalType>();
+    if (embedded_nominal->category() != NominalType::Category::kClass) {
+      TypePrinter tp;
+      ReportError(position(embedded), "type '" + tp(embedded_type) + "' cannot be embedded");
+      continue;
+    }
+
+    if (embedded_nominal->HasEmbedded(nominal_type)) {
+      ReportError(position(embedded), "cyclic embedding detected");
+      continue;
+    }
+
+    xylo_check(nominal_type->AddEmbedded(embedded->symbol()->name(), embedded_nominal));
   }
 }
 
@@ -259,7 +267,7 @@ void Inferencer::RegisterMethod(NominalType* nominal_type, FunctionDeclaration* 
   xylo_contract(func_type != nullptr);
 
   // for implicit types, resolve the type later
-  if (!func_type->is_monotype()) {
+  if (!func_type->is_closed_type()) {
     func_type = nullptr;
   }
 
@@ -379,6 +387,22 @@ void Inferencer::VisitDeclaration(Declaration* decl) {
 }
 
 
+void Inferencer::VisitInterfaceDeclaration(InterfaceDeclaration* decl) {
+  ClassDeclareInfo declare_info{
+    .class_decl = decl,
+    .method_decls = Map<Identifier*, FunctionDeclaration*>(),
+  };
+
+  for (auto& inner_decl : decl->methods()) {
+    auto method_decl = inner_decl->As<FunctionDeclaration>();
+    declare_info.method_decls.emplace(method_decl->symbol()->name(), method_decl);
+  }
+
+  auto interface_type = decl->symbol()->type()->As<NominalType>();
+  CheckOverrides(interface_type, declare_info, false);
+}
+
+
 void Inferencer::VisitClassDeclaration(ClassDeclaration* decl) {
   ClassDeclareInfo declare_info{
     .class_decl = decl,
@@ -394,7 +418,7 @@ void Inferencer::VisitClassDeclaration(ClassDeclaration* decl) {
     }
   }
 
-  auto class_type = decl->symbol()->type()->As<NominalType>();
+  auto class_type = decl->class_type();
   CheckOverrides(class_type, declare_info, true);
 }
 
@@ -411,7 +435,7 @@ void Inferencer::VisitFunctionDeclaration(FunctionDeclaration* decl) {
     auto func_type = decl->func()->type();
     xylo_contract(func_type != nullptr);
 
-    if (func_type->is_monotype()) {
+    if (func_type->is_closed_type()) {
       decl->symbol()->set_type(func_type);
     } else {
       ReportError(decl->symbol()->position(), "recursive functions must have an explicit type annotation");
@@ -1098,16 +1122,24 @@ void Inferencer::VisitConditionalExpression(ConditionalExpression* expr, Inferen
 
 void Inferencer::VisitConstructExpression(ConstructExpression* expr, InferenceContext* ctx) {
   xylo_contract(expr->type() == nullptr);
-  xylo_contract(expr->class_symbol() != nullptr);
 
-  auto symbol = expr->class_symbol();
-  auto class_type = symbol->type();
-  xylo_contract(class_type != nullptr);
-  xylo_contract(class_type->kind() == Type::Kind::kNominal);
+  auto class_type = ConvertDeclarableTypeRepr(expr->type_repr(), expr->arena());
+  if (class_type->kind() == Type::Kind::kError) {
+    expr->set_type(context_->error_type());
+    return;
+  }
+
+  if (class_type->kind() != Type::Kind::kNominal) {
+    TypePrinter tp;
+    ReportError(expr->type_repr()->position(), "type '" + tp(class_type) + "' cannot be instantiated");
+    expr->set_type(context_->error_type());
+    return;
+  }
 
   auto class_nominal = class_type->As<NominalType>();
   if (class_nominal->category() != NominalType::Category::kClass) {
-    ReportError(expr->position(), "type '" + class_nominal->name()->str().cpp_str() + "' cannot be instantiated");
+    TypePrinter tp;
+    ReportError(expr->type_repr()->position(), "type '" + tp(class_nominal) + "' cannot be instantiated");
     expr->set_type(context_->error_type());
     return;
   }
@@ -1115,8 +1147,8 @@ void Inferencer::VisitConstructExpression(ConstructExpression* expr, InferenceCo
   expr->set_type(class_type);
 
   VariableContext var_ctx{
-    .position = expr->position(),
-    .name = expr->class_name(),
+    .position = expr->type_repr()->position(),
+    .name = class_nominal->name(),
     .type = class_type,
   };
 
@@ -1312,27 +1344,35 @@ Type* Inferencer::ConvertDeclarableTypeRepr(TypeRepr* type_repr, TypeArena* aren
   auto type = ConvertTypeRepr(type_repr, arena);
 
   switch (type->kind()) {
+    case Type::Kind::kError:
     case Type::Kind::kNominal:
     case Type::Kind::kFunction:
+    case Type::Kind::kTyvar:
       return type;
 
-    default: {
-      ReportError(type_repr->position(), "unsupported type in declaration");
-      auto metavar = new TypeMetavar();
-      arena->adopt_type(TypePtr(metavar));
-      return metavar;
+    case Type::Kind::kScheme: {
+      TypePrinter tp;
+      ReportError(type_repr->position(), "missing type arguments for '" + tp(type) + "'");
+      return context_->error_type();
     }
+
+    default:
+      ReportError(type_repr->position(), "unsupported type in declaration");
+      return context_->error_type();
   }
 }
 
 
 Type* Inferencer::ConvertTypeRepr(TypeRepr* type_repr, TypeArena* arena) {
   switch (type_repr->kind()) {
-    case TypeRepr::Kind::kNull:
+    case TypeRepr::Kind::kError:
       xylo_unreachable();
 
     case TypeRepr::Kind::kNamed:
       return ConvertNamedTypeRepr(type_repr->As<NamedTypeRepr>(), arena);
+
+    case TypeRepr::Kind::kApplication:
+      return ConvertTypeApplicationRepr(type_repr->As<TypeApplicationRepr>(), arena);
 
     case TypeRepr::Kind::kTuple:
       return ConvertTupleTypeRepr(type_repr->As<TupleTypeRepr>(), arena);
@@ -1347,6 +1387,36 @@ Type* Inferencer::ConvertTypeRepr(TypeRepr* type_repr, TypeArena* arena) {
 
 Type* Inferencer::ConvertNamedTypeRepr(NamedTypeRepr* type_repr, TypeArena* arena) {
   return type_repr->symbol()->type();
+}
+
+
+Type* Inferencer::ConvertTypeApplicationRepr(TypeApplicationRepr* type_repr, TypeArena* arena) {
+  auto base_type = ConvertTypeRepr(type_repr->base(), arena);
+
+  if (base_type->kind() == Type::Kind::kError) {
+    return base_type;
+  }
+
+  if (base_type->kind() != Type::Kind::kScheme) {
+    TypePrinter tp;
+    ReportError(type_repr->position(), "type '" + tp(base_type) + "' is not generic");
+    return context_->error_type();
+  }
+
+  auto base_scheme = base_type->As<TypeScheme>();
+  if (base_scheme->vars().size() != type_repr->args()->elements().size()) {
+    TypePrinter tp;
+    ReportError(type_repr->position(), "wrong number of type arguments for '" + tp(base_scheme) + "'");
+    return context_->error_type();
+  }
+
+  Vector<Type*> arg_types;
+  for (auto& arg_repr : type_repr->args()->elements()) {
+    auto arg_type = ConvertTypeRepr(arg_repr.get(), arena);
+    arg_types.push_back(arg_type);
+  }
+
+  return base_type->Instantiate(arena, arg_types);
 }
 
 

@@ -127,6 +127,9 @@ static int TernaryPrecedence(Token token) {
 
 static constexpr auto kDeclarationEndTokens = {Token::kInterface, Token::kClass, Token::kDef, Token::kRBrace};
 
+static constexpr auto kClassHeaderEndTokens = {Token::kLBrace, Token::kInterface, Token::kClass, Token::kDef,
+                                               Token::kRBrace};
+
 static constexpr auto kLambdaEndTokens = {Token::kSemicolon, Token::kNewline,   Token::kRParen, Token::kRBrack,
                                           Token::kRBrace,    Token::kInterface, Token::kClass,  Token::kDef};
 
@@ -137,6 +140,8 @@ static constexpr auto kStatementEndTokens = {Token::kSemicolon, Token::kNewline,
 static constexpr auto kExpressionEndTokens = {Token::kSemicolon, Token::kNewline, Token::kComma,
                                               Token::kRParen,    Token::kRBrack,  Token::kRBrace};
 
+static constexpr auto kTypeReprEndTokens = {Token::kSemicolon, Token::kNewline, Token::kComma, Token::kRParen,
+                                            Token::kRBrack,    Token::kLBrace,  Token::kRBrace};
 
 FileASTPtr Parser::ParseFile() {
   auto file_ast = FileAST::Create();
@@ -180,8 +185,12 @@ DeclarationPtr Parser::ParseInterfaceDeclaration(Scope* scope) {
   auto interface = InterfaceDeclaration::Create(std::move(symbol));
   auto inner_scope = scope->CreateChild();
 
+  if (PeekAhead() == Token::kLBrack) {
+    interface->set_type_params(ParseTypeParams(inner_scope));
+  }
+
   if (PeekAhead() == Token::kColon) {
-    interface->set_supers(ParseSuperTypes(scope));
+    interface->set_supers(ParseSuperTypes());
   }
 
   if (!Expect(Token::kLBrace)) {
@@ -223,8 +232,12 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
   auto clazz = ClassDeclaration::Create(std::move(symbol));
   auto inner_scope = scope->CreateChild();
 
+  if (PeekAhead() == Token::kLBrack) {
+    clazz->set_type_params(ParseTypeParams(inner_scope));
+  }
+
   if (PeekAhead() == Token::kColon) {
-    clazz->set_supers(ParseSuperTypes(scope));
+    clazz->set_supers(ParseSuperTypes());
   }
 
   if (!Expect(Token::kLBrace)) {
@@ -234,13 +247,12 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
 
   while (PeekAhead() != Token::kRBrace && PeekAhead() != Token::kEOF) {
     switch (PeekAhead()) {
-      case Token::kIdentifier: {
-        clazz->add_field(ParseClassField(inner_scope));
-        break;
-      }
-
       case Token::kEmbed:
         clazz->add_embedded(ParseEmbeddedClass(inner_scope));
+        break;
+
+      case Token::kIdentifier:
+        clazz->add_field(ParseClassField(inner_scope));
         break;
 
       case Token::kInterface:
@@ -269,6 +281,80 @@ DeclarationPtr Parser::ParseClassDeclaration(Scope* scope) {
 }
 
 
+Vector<TypeParamPtr> Parser::ParseTypeParams(Scope* scope) {
+  Expect(Token::kLBrack);
+  Vector<TypeParamPtr> params;
+
+  // at least one type param
+  params.push_back(ParseOneTypeParam(scope));
+
+  // trailing type params
+  while (PeekAhead() == Token::kComma) {
+    Consume();
+    params.push_back(ParseOneTypeParam(scope));
+  }
+
+  Expect(Token::kRBrack);
+  return params;
+}
+
+
+TypeParamPtr Parser::ParseOneTypeParam(Scope* scope) {
+  if (!Expect(Token::kIdentifier)) {
+    Synchronize(kClassHeaderEndTokens);
+    return nullptr;
+  }
+
+  auto param_name = LastTokenValue().as_identifier;
+  auto& ident_pos = LastTokenPosition();
+  auto symbol = Symbol::Create(Symbol::Kind::kType, scope, param_name, ident_pos);
+  auto param = TypeParam::Create(std::move(symbol));
+
+  return param;
+}
+
+
+Vector<SuperTypePtr> Parser::ParseSuperTypes() {
+  Expect(Token::kColon);
+  Vector<SuperTypePtr> supers;
+
+  // at least one super type
+  supers.push_back(SuperType::Create(ParseTypeRepr()));
+
+  // trailing super types
+  while (PeekAhead() == Token::kComma) {
+    Consume();
+    supers.push_back(SuperType::Create(ParseTypeRepr()));
+  }
+
+  return supers;
+}
+
+
+EmbeddedClassPtr Parser::ParseEmbeddedClass(Scope* scope) {
+  Expect(Token::kEmbed);
+
+  if (!Expect(Token::kIdentifier)) {
+    Synchronize(kDeclarationEndTokens);
+    return nullptr;
+  }
+
+  auto embed_name = LastTokenValue().as_identifier;
+  auto& embed_ident_pos = LastTokenPosition();
+  auto embed_symbol = Symbol::Create(Symbol::Kind::kLet, scope, embed_name, embed_ident_pos);
+
+  if (!Expect(Token::kColon)) {
+    Synchronize(kDeclarationEndTokens);
+    return nullptr;
+  }
+
+  auto embedded_type_repr = ParseTypeRepr();
+  auto embedded_class = EmbeddedClass::Create(std::move(embed_symbol), std::move(embedded_type_repr));
+  ExpectEndOfStatement();
+  return embedded_class;
+}
+
+
 ClassFieldPtr Parser::ParseClassField(Scope* scope) {
   Expect(Token::kIdentifier);
   auto field_name = LastTokenValue().as_identifier;
@@ -276,54 +362,14 @@ ClassFieldPtr Parser::ParseClassField(Scope* scope) {
   auto field_symbol = Symbol::Create(Symbol::Kind::kVar, scope, field_name, field_ident_pos);
   auto field = ClassField::Create(std::move(field_symbol));
 
-  if (Expect(Token::kColon)) {
-    field->set_type_repr(ParseTypeRepr());
-  } else {
-    Synchronize(kExpressionEndTokens);
+  if (!Expect(Token::kColon)) {
+    Synchronize(kDeclarationEndTokens);
+    return nullptr;
   }
 
+  field->set_type_repr(ParseTypeRepr());
   ExpectEndOfStatement();
   return field;
-}
-
-
-EmbeddedClassPtr Parser::ParseEmbeddedClass(Scope* scope) {
-  Expect(Token::kEmbed);
-  Expect(Token::kIdentifier);
-  auto embed_name = LastTokenValue().as_identifier;
-  auto& embed_ident_pos = LastTokenPosition();
-  auto embedded_class = EmbeddedClass::Create(embed_name);
-  embedded_class->set_position(embed_ident_pos);
-
-  ExpectEndOfStatement();
-  return embedded_class;
-}
-
-
-Vector<SuperTypePtr> Parser::ParseSuperTypes(Scope* scope) {
-  Expect(Token::kColon);
-  Vector<SuperTypePtr> supers;
-
-  bool first = true;
-  while (PeekAhead() == Token::kIdentifier || PeekAhead() == Token::kComma) {
-    if (!first) {
-      Expect(Token::kComma);
-    }
-    first = false;
-
-    if (Expect(Token::kIdentifier)) {
-      auto super_name = LastTokenValue().as_identifier;
-      auto& ident_pos = LastTokenPosition();
-      auto super = SuperType::Create(super_name);
-      super->set_position(ident_pos);
-      supers.push_back(std::move(super));
-    } else {
-      Synchronize(kDeclarationEndTokens);
-      return supers;
-    }
-  }
-
-  return supers;
 }
 
 
@@ -638,7 +684,7 @@ ExpressionPtr Parser::ParseTernaryExpression(Scope* scope, int min_precedence) {
 
 
 ExpressionPtr Parser::ParseBinaryExpression(Scope* scope, int min_precedence) {
-  auto lhs = ParseUnaryExpression(scope, min_precedence);
+  auto lhs = ParsePostfixExpression(scope, min_precedence);
 
   while (true) {
     int prec = BinaryPrecedence(PeekAhead());
@@ -660,7 +706,7 @@ ExpressionPtr Parser::ParseBinaryExpression(Scope* scope, int min_precedence) {
 }
 
 
-ExpressionPtr Parser::ParseUnaryExpression(Scope* scope, int min_precedence) {
+ExpressionPtr Parser::ParsePostfixExpression(Scope* scope, int min_precedence) {
   auto lhs = ParsePrefixExpression(scope);
 
   // postfix
@@ -831,9 +877,9 @@ ExpressionPtr Parser::ParseConditionalExpression(Scope* scope) {
 
 ExpressionPtr Parser::ParseConstructExpression(Scope* scope) {
   Expect(Token::kNew);
-  Expect(Token::kIdentifier);
-  auto class_name = LastTokenValue().as_identifier;
-  auto ident_pos = LastTokenPosition();
+  auto new_pos = LastTokenPosition();
+
+  auto type_repr = ParseTypeRepr();
 
   if (PeekAhead() != Token::kLBrace) {
     ErrorExpected(Token::kLBrace);
@@ -842,8 +888,8 @@ ExpressionPtr Parser::ParseConstructExpression(Scope* scope) {
   }
 
   auto initializer = ParseObjectInitializer(scope);
-  auto expr = ConstructExpression::Create(class_name, std::move(initializer));
-  expr->set_position(ident_pos);
+  auto expr = ConstructExpression::Create(std::move(type_repr), std::move(initializer));
+  expr->set_position(new_pos);
 
   return expr;
 }
@@ -905,26 +951,50 @@ TypeReprPtr Parser::ParseTypeRepr() {
 
 
 TypeReprPtr Parser::ParseFunctionTypeRepr() {
-  auto lhs = ParsePrimaryTypeRepr();
+  auto lhs = ParsePostfixTypeRepr();
 
   if (PeekAhead() == Token::kArrow) {
     Consume();
-    auto token_pos = LastTokenPosition();
 
     TupleTypeReprPtr params_type;
     if (lhs->kind() == TypeRepr::Kind::kTuple) {
       params_type = TupleTypeReprPtr(lhs.release()->As<TupleTypeRepr>());
     } else {
       params_type = TupleTypeRepr::Create();
+      params_type->set_position(lhs->position());
       params_type->add_element(std::move(lhs));
     }
 
     auto return_type = ParseFunctionTypeRepr();
+
+    auto& params_pos = params_type->position();
+    auto& return_pos = return_type->position();
+
     auto func_type_repr = FunctionTypeRepr::Create(std::move(params_type), std::move(return_type));
-    func_type_repr->set_position(token_pos);
+    func_type_repr->set_position(SourceRange(params_pos, return_pos));
     return func_type_repr;
   } else {
     return lhs;
+  }
+}
+
+
+TypeReprPtr Parser::ParsePostfixTypeRepr() {
+  auto lhs = ParsePrimaryTypeRepr();
+
+  while (true) {
+    switch (PeekAhead()) {
+      case Token::kLBrack: {
+        auto& lhs_pos = lhs->position();
+        auto type_args = ParseTypeArgs();
+        lhs = TypeApplicationRepr::Create(std::move(lhs), std::move(type_args));
+        lhs->set_position(SourceRange(lhs_pos, LastTokenPosition()));
+        break;
+      }
+
+      default:
+        return lhs;
+    }
   }
 }
 
@@ -933,9 +1003,9 @@ TypeReprPtr Parser::ParsePrimaryTypeRepr() {
   switch (PeekAhead()) {
     case Token::kLParen: {
       Expect(Token::kLParen);
-      auto tuple_type_repr = ParseTupleTypeRepr();
+      auto paren_type_repr = ParseParenTypeRepr();
       Expect(Token::kRParen);
-      return tuple_type_repr;
+      return paren_type_repr;
     }
 
     case Token::kIdentifier: {
@@ -948,36 +1018,64 @@ TypeReprPtr Parser::ParsePrimaryTypeRepr() {
 
     default:
       ErrorUnexpected();
-      Synchronize(kExpressionEndTokens);
-      return NullTypeRepr::Create();
+      Synchronize(kTypeReprEndTokens);
+      return ErrorTypeRepr::Create();
   }
 }
 
 
-TypeReprPtr Parser::ParseTupleTypeRepr() {
+TypeReprPtr Parser::ParseParenTypeRepr() {
+  auto lparen_pos = LastTokenPosition();
+
   if (PeekAhead() == Token::kRParen) {
-    auto tuple = TupleTypeRepr::Create();  // empty tuple
-    tuple->set_position(LastTokenPosition());
+    // empty tuple
+    auto tuple = TupleTypeRepr::Create();
+    tuple->set_position(SourceRange(lparen_pos, PeekTokenPosition()));
     return tuple;
   }
 
   // take one element
   auto element = ParseTypeRepr();
 
-  if (PeekAhead() == Token::kComma) {
-    auto tuple = TupleTypeRepr::Create();
-    tuple->add_element(std::move(element));
-    tuple->set_position(PeekTokenPosition());
-
-    while (PeekAhead() == Token::kComma) {
-      Consume();
-      tuple->add_element(ParseTypeRepr());
-    }
-
-    return tuple;
-  } else {
+  if (PeekAhead() != Token::kComma) {
+    // single element, not a tuple
     return element;
   }
+
+  // tuple type
+  auto tuple = TupleTypeRepr::Create();
+  tuple->add_element(std::move(element));
+
+  while (PeekAhead() == Token::kComma) {
+    Consume();
+    tuple->add_element(ParseTypeRepr());
+  }
+
+  auto& rparen_pos = PeekTokenPosition();
+  tuple->set_position(SourceRange(lparen_pos, rparen_pos));
+  return tuple;
+}
+
+
+TupleTypeReprPtr Parser::ParseTypeArgs() {
+  Expect(Token::kLBrack);
+  auto lbrack_pos = LastTokenPosition();
+  auto type_args = TupleTypeRepr::Create();
+
+  // at least one type arg
+  type_args->add_element(ParseTypeRepr());
+
+  // trailing type args
+  while (PeekAhead() == Token::kComma) {
+    Consume();
+    type_args->add_element(ParseTypeRepr());
+  }
+
+  Expect(Token::kRBrack);
+  auto& rbrack_pos = LastTokenPosition();
+
+  type_args->set_position(SourceRange(lbrack_pos, rbrack_pos));
+  return type_args;
 }
 
 

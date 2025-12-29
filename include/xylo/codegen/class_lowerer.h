@@ -23,7 +23,7 @@ class ClassLowerer : public DeclarationLowerer {
   ~ClassLowerer() = default;
 
   ClassDeclaration* xylo_class() const { return class_decl_; }
-  xylo::NominalType* xylo_nominal() const { return class_decl_->symbol()->type()->As<NominalType>(); }
+  xylo::NominalType* xylo_nominal() const { return class_decl_->class_type(); }
   const String& class_name() const { return class_name_; }
   void set_class_name(String&& name) { class_name_ = std::move(name); }
 

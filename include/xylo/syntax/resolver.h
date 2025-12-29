@@ -84,9 +84,10 @@ class Resolver : public DiagnosticReporter {
   void VisitDeclaration(Declaration* decl, ResolutionContext* ctx);
   void VisitInterfaceDeclaration(InterfaceDeclaration* decl, ResolutionContext* ctx);
   void VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* ctx);
-  void VisitClassField(ClassField* field, ResolutionContext* ctx);
-  void VisitEmbeddedClass(EmbeddedClass* embedded, ClassDeclaration* embedding, ResolutionContext* ctx);
+  void VisitTypeParam(TypeParam* type_param, ResolutionContext* ctx);
   void VisitSuperType(SuperType* super, ResolutionContext* ctx);
+  void VisitEmbeddedClass(EmbeddedClass* embedded, ResolutionContext* ctx);
+  void VisitClassField(ClassField* field, ResolutionContext* ctx);
   void VisitFunctionDeclaration(FunctionDeclaration* decl, ResolutionContext* ctx);
 
   void VisitBlock(Block* block, ResolutionContext* ctx);
@@ -114,8 +115,10 @@ class Resolver : public DiagnosticReporter {
   void VisitObjectInitializer(ObjectInitializer* initializer, ResolutionContext* ctx);
   void VisitFieldEntry(FieldEntry* entry, ResolutionContext* ctx);
 
-  void VisitTypeRepr(TypeRepr* type_repr, ResolutionContext* ctx);
-  void VisitNamedTypeRepr(NamedTypeRepr* type_repr, ResolutionContext* ctx);
+  using TypeReprCallback = std::function<void(Symbol*)>;
+  void VisitTypeRepr(TypeRepr* type_repr, ResolutionContext* ctx, TypeReprCallback named_type_callback = nullptr);
+  void VisitNamedTypeRepr(NamedTypeRepr* type_repr, ResolutionContext* ctx, TypeReprCallback callback);
+  void VisitTypeApplicationRepr(TypeApplicationRepr* type_repr, ResolutionContext* ctx, TypeReprCallback callback);
   void VisitFunctionTypeRepr(FunctionTypeRepr* type_repr, ResolutionContext* ctx);
   void VisitTupleTypeRepr(TupleTypeRepr* type_repr, ResolutionContext* ctx);
 
@@ -139,6 +142,7 @@ class Resolver : public DiagnosticReporter {
 
   void MarkAsClosureIfNeeded(FunctionExpression* func, Symbol* reference_symbol);
   void MarkAsClosureIfNeeded(FunctionExpression* func, Scope* reference_scope);
+  void MarkAsClosureIfNeeded(ClassDeclaration* clazz, Symbol* reference_symbol);
   void MarkAsClosureIfNeeded(ClassDeclaration* clazz, Scope* reference_scope);
 
   void ErrorUndeclared(const SourceRange& position, Identifier* name);

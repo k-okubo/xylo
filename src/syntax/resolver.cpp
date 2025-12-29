@@ -75,13 +75,17 @@ void Resolver::VisitDeclaration(Declaration* decl, ResolutionContext* ctx) {
 
 
 void Resolver::VisitInterfaceDeclaration(InterfaceDeclaration* decl, ResolutionContext* ctx) {
-  for (auto& super : decl->supers()) {
-    VisitSuperType(super.get(), ctx);
-  }
-
   NameTable local_table(ctx->name_table);
   ResolutionContext local_ctx = {&local_table, ctx->enclosure};
   local_ctx.enclosure.interface = decl;
+
+  for (auto& type_param : decl->type_params()) {
+    VisitTypeParam(type_param.get(), &local_ctx);
+  }
+
+  for (auto& super : decl->supers()) {
+    VisitSuperType(super.get(), &local_ctx);
+  }
 
   for (auto& method : decl->methods()) {
     PrevisitDeclaration(method.get(), &local_ctx);
@@ -94,17 +98,21 @@ void Resolver::VisitInterfaceDeclaration(InterfaceDeclaration* decl, ResolutionC
 
 
 void Resolver::VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* ctx) {
-  for (auto& super : decl->supers()) {
-    VisitSuperType(super.get(), ctx);
-  }
-
-  for (auto& embedded : decl->embeddeds()) {
-    VisitEmbeddedClass(embedded.get(), decl, ctx);
-  }
-
   NameTable local_table(ctx->name_table);
   ResolutionContext local_ctx = {&local_table, ctx->enclosure};
   local_ctx.enclosure.clazz = decl;
+
+  for (auto& type_param : decl->type_params()) {
+    VisitTypeParam(type_param.get(), &local_ctx);
+  }
+
+  for (auto& super : decl->supers()) {
+    VisitSuperType(super.get(), &local_ctx);
+  }
+
+  for (auto& embedded : decl->embeddeds()) {
+    VisitEmbeddedClass(embedded.get(), &local_ctx);
+  }
 
   for (auto& field : decl->fields()) {
     VisitClassField(field.get(), &local_ctx);
@@ -134,6 +142,44 @@ void Resolver::VisitClassDeclaration(ClassDeclaration* decl, ResolutionContext* 
 }
 
 
+void Resolver::VisitTypeParam(TypeParam* type_param, ResolutionContext* ctx) {
+  auto type_param_symbol = type_param->symbol();
+  auto type_param_name = type_param_symbol->name();
+
+  if (!ctx->name_table->Insert(type_param_name, type_param_symbol)) {
+    ErrorRedefinition(type_param_symbol->position(), type_param_name, ctx->name_table->Lookup(type_param_name));
+  }
+}
+
+
+void Resolver::VisitSuperType(SuperType* super, ResolutionContext* ctx) {
+  VisitTypeRepr(super->type_repr(), ctx);
+}
+
+
+void Resolver::VisitEmbeddedClass(EmbeddedClass* embedded, ResolutionContext* ctx) {
+  auto embed_symbol = embedded->symbol();
+  auto embed_name = embed_symbol->name();
+
+  if (!ctx->name_table->Insert(embed_name, embed_symbol)) {
+    ErrorRedefinition(embed_symbol->position(), embed_name, ctx->name_table->Lookup(embed_name));
+  }
+
+  VisitTypeRepr(embedded->type_repr(), ctx, [=, this](Symbol* embedded_symbol) {
+    // the type_repr is a named type
+    if (embedded_symbol->scope() != context_->root_scope()) {
+      auto embedded_decl = GetClass(embedded_symbol);
+      auto enclosing_class = ctx->enclosure.clazz;
+      OnUpdateReferenceScope(embedded_decl, [=, this](const EntityState& state) {
+        if (embedded_decl->is_closure()) {
+          MarkAsClosureIfNeeded(enclosing_class, embedded_decl->symbol());
+        }
+      });
+    }
+  });
+}
+
+
 void Resolver::VisitClassField(ClassField* field, ResolutionContext* ctx) {
   auto field_symbol = field->symbol();
   auto field_name = field_symbol->name();
@@ -144,39 +190,6 @@ void Resolver::VisitClassField(ClassField* field, ResolutionContext* ctx) {
 
   if (field->type_repr() != nullptr) {
     VisitTypeRepr(field->type_repr(), ctx);
-  }
-}
-
-
-void Resolver::VisitEmbeddedClass(EmbeddedClass* embedded, ClassDeclaration* embedding, ResolutionContext* ctx) {
-  auto symbol = ctx->name_table->Lookup(embedded->name());
-
-  if (symbol == nullptr) {
-    ErrorUndeclared(embedded->position(), embedded->name());
-  } else if (symbol->kind() != Symbol::Kind::kType) {
-    ErrorValueAsType(embedded->position(), symbol);
-  } else {
-    embedded->set_symbol(symbol);
-
-    if (symbol->scope() != context_->root_scope()) {
-      auto embedded_decl = GetClass(symbol);
-      OnUpdateReferenceScope(embedded_decl, [=, this](const EntityState& state) {
-        MarkAsClosureIfNeeded(embedding, state.reference_scope);
-      });
-    }
-  }
-}
-
-
-void Resolver::VisitSuperType(SuperType* super, ResolutionContext* ctx) {
-  auto symbol = ctx->name_table->Lookup(super->name());
-
-  if (symbol == nullptr) {
-    ErrorUndeclared(super->position(), super->name());
-  } else if (symbol->kind() != Symbol::Kind::kType) {
-    ErrorValueAsType(super->position(), symbol);
-  } else {
-    super->set_symbol(symbol);
   }
 }
 
@@ -440,15 +453,8 @@ void Resolver::VisitConditionalExpression(ConditionalExpression* expr, Resolutio
 
 
 void Resolver::VisitConstructExpression(ConstructExpression* expr, ResolutionContext* ctx) {
-  auto class_symbol = ctx->name_table->Lookup(expr->class_name());
-
-  if (class_symbol == nullptr) {
-    ErrorUndeclared(expr->position(), expr->class_name());
-  } else if (class_symbol->kind() != Symbol::Kind::kType) {
-    ErrorValueAsType(expr->position(), class_symbol);
-  } else {
-    expr->set_class_symbol(class_symbol);
-
+  VisitTypeRepr(expr->type_repr(), ctx, [=, this](Symbol* class_symbol) {
+    // the type_repr is a named type
     if (class_symbol->scope() != context_->root_scope()) {
       auto class_decl = GetClass(class_symbol);
       auto enclosing_func = ctx->enclosure.func;
@@ -458,7 +464,7 @@ void Resolver::VisitConstructExpression(ConstructExpression* expr, ResolutionCon
         }
       });
     }
-  }
+  });
 
   VisitObjectInitializer(expr->initializer(), ctx);
 }
@@ -509,14 +515,18 @@ void Resolver::VisitFieldEntry(FieldEntry* entry, ResolutionContext* ctx) {
 }
 
 
-void Resolver::VisitTypeRepr(TypeRepr* type_repr, ResolutionContext* ctx) {
+void Resolver::VisitTypeRepr(TypeRepr* type_repr, ResolutionContext* ctx, TypeReprCallback named_type_callback) {
   switch (type_repr->kind()) {
-    case TypeRepr::Kind::kNull:
+    case TypeRepr::Kind::kError:
       xylo_unreachable();
       break;
 
     case TypeRepr::Kind::kNamed:
-      VisitNamedTypeRepr(type_repr->As<NamedTypeRepr>(), ctx);
+      VisitNamedTypeRepr(type_repr->As<NamedTypeRepr>(), ctx, named_type_callback);
+      break;
+
+    case TypeRepr::Kind::kApplication:
+      VisitTypeApplicationRepr(type_repr->As<TypeApplicationRepr>(), ctx, named_type_callback);
       break;
 
     case TypeRepr::Kind::kFunction:
@@ -530,7 +540,7 @@ void Resolver::VisitTypeRepr(TypeRepr* type_repr, ResolutionContext* ctx) {
 }
 
 
-void Resolver::VisitNamedTypeRepr(NamedTypeRepr* type_repr, ResolutionContext* ctx) {
+void Resolver::VisitNamedTypeRepr(NamedTypeRepr* type_repr, ResolutionContext* ctx, TypeReprCallback callback) {
   auto symbol = ctx->name_table->Lookup(type_repr->name());
 
   if (symbol == nullptr) {
@@ -539,6 +549,20 @@ void Resolver::VisitNamedTypeRepr(NamedTypeRepr* type_repr, ResolutionContext* c
     ErrorValueAsType(type_repr->position(), symbol);
   } else {
     type_repr->set_symbol(symbol);
+
+    if (callback != nullptr) {
+      callback(symbol);
+    }
+  }
+}
+
+
+void Resolver::VisitTypeApplicationRepr(TypeApplicationRepr* type_repr, ResolutionContext* ctx,
+                                        TypeReprCallback callback) {
+  VisitTypeRepr(type_repr->base(), ctx, callback);
+
+  for (auto& arg_type : type_repr->args()->elements()) {
+    VisitTypeRepr(arg_type.get(), ctx);
   }
 }
 
@@ -683,6 +707,16 @@ void Resolver::MarkAsClosureIfNeeded(FunctionExpression* func, Scope* reference_
     }
 
     InvokeUpdateReferenceScope(state);
+  }
+}
+
+
+void Resolver::MarkAsClosureIfNeeded(ClassDeclaration* clazz, Symbol* reference_symbol) {
+  auto reference_scope = reference_symbol->scope();
+  MarkAsClosureIfNeeded(clazz, reference_scope);
+
+  if (reference_scope->is_outer_than(clazz->inner_scope())) {
+    clazz->set_closure(true);
   }
 }
 

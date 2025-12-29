@@ -787,7 +787,7 @@ TEST(ParserTest, ParseExpression_New_MissingColon) {
 
 
 TEST(ParserTest, ParseExpression_New_WrongBrace) {
-  auto source = "new Foo[ x: 10 ]; a = b";
+  auto source = "new Foo(x: 10); a = b";
   XyloContext context;
   Lexer lexer(&context, source);
   Parser parser(&context, &lexer);
@@ -797,7 +797,7 @@ TEST(ParserTest, ParseExpression_New_WrongBrace) {
   ASSERT_TRUE(parser.has_diagnostics());
   EXPECT_EQ(parser.diagnostics().size(), 1);
 
-  EXPECT_EQ(parser.diagnostics()[0].message, "expected '{', found '['");
+  EXPECT_EQ(parser.diagnostics()[0].message, "expected '{', found '('");
   EXPECT_EQ(parser.diagnostics()[0].position.start.line, 1);
   EXPECT_EQ(parser.diagnostics()[0].position.start.column, 8);
 }

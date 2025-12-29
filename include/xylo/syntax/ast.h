@@ -28,9 +28,10 @@ class TupleExpression;
 class FunctionExpression;
 class TupleTypeRepr;
 
-class ClassField;
-class EmbeddedClass;
+class TypeParam;
 class SuperType;
+class EmbeddedClass;
+class ClassField;
 class FunctionParam;
 class Initializer;
 class ObjectInitializer;
@@ -49,6 +50,7 @@ using TupleExpressionPtr = std::unique_ptr<TupleExpression>;
 using FunctionExpressionPtr = std::unique_ptr<FunctionExpression>;
 using TupleTypeReprPtr = std::unique_ptr<TupleTypeRepr>;
 
+using TypeParamPtr = std::unique_ptr<TypeParam>;
 using ClassFieldPtr = std::unique_ptr<ClassField>;
 using EmbeddedClassPtr = std::unique_ptr<EmbeddedClass>;
 using SuperTypePtr = std::unique_ptr<SuperType>;
@@ -193,12 +195,17 @@ class InterfaceDeclaration : public Declaration {
   explicit InterfaceDeclaration(SymbolPtr&& symbol) :
       Declaration(Kind::kInterface, std::move(symbol)),
       inner_scope_(nullptr),
+      type_params_(),
       methods_(),
-      supers_() {}
+      supers_(),
+      interface_type_(nullptr) {}
 
  public:
   Scope* inner_scope() const { return inner_scope_; }
   void set_inner_scope(Scope* inner_scope) { inner_scope_ = inner_scope; }
+
+  const Vector<TypeParamPtr>& type_params() const { return type_params_; }
+  void set_type_params(Vector<TypeParamPtr>&& type_params) { type_params_ = std::move(type_params); }
 
   const Vector<FunctionDeclarationPtr>& methods() const { return methods_; }
   void add_method(FunctionDeclarationPtr&& method) { methods_.push_back(std::move(method)); }
@@ -206,10 +213,15 @@ class InterfaceDeclaration : public Declaration {
   const Vector<SuperTypePtr>& supers() const { return supers_; }
   void set_supers(Vector<SuperTypePtr>&& supers) { supers_ = std::move(supers); }
 
+  NominalType* interface_type() const { return interface_type_; }
+  void set_interface_type(NominalType* interface_type) { interface_type_ = interface_type; }
+
  private:
   Scope* inner_scope_;
+  Vector<TypeParamPtr> type_params_;
   Vector<FunctionDeclarationPtr> methods_;
   Vector<SuperTypePtr> supers_;
+  NominalType* interface_type_;
 };
 
 
@@ -224,15 +236,26 @@ class ClassDeclaration : public Declaration {
   explicit ClassDeclaration(SymbolPtr&& symbol) :
       Declaration(Kind::kClass, std::move(symbol)),
       inner_scope_(nullptr),
+      type_params_(),
+      supers_(),
+      embeddeds_(),
       fields_(),
       declarations_(),
-      embeddeds_(),
-      supers_(),
-      closure_(false) {}
+      closure_(false),
+      class_type_(nullptr) {}
 
  public:
   Scope* inner_scope() const { return inner_scope_; }
   void set_inner_scope(Scope* inner_scope) { inner_scope_ = inner_scope; }
+
+  const Vector<TypeParamPtr>& type_params() const { return type_params_; }
+  void set_type_params(Vector<TypeParamPtr>&& type_params) { type_params_ = std::move(type_params); }
+
+  const Vector<SuperTypePtr>& supers() const { return supers_; }
+  void set_supers(Vector<SuperTypePtr>&& supers) { supers_ = std::move(supers); }
+
+  const Vector<EmbeddedClassPtr>& embeddeds() const { return embeddeds_; }
+  void add_embedded(EmbeddedClassPtr&& embedded) { embeddeds_.push_back(std::move(embedded)); }
 
   const Vector<ClassFieldPtr>& fields() const { return fields_; }
   void add_field(ClassFieldPtr&& field) { fields_.push_back(std::move(field)); }
@@ -240,22 +263,81 @@ class ClassDeclaration : public Declaration {
   const Vector<DeclarationPtr>& declarations() const { return declarations_; }
   void add_declaration(DeclarationPtr&& decl) { declarations_.push_back(std::move(decl)); }
 
-  const Vector<EmbeddedClassPtr>& embeddeds() const { return embeddeds_; }
-  void add_embedded(EmbeddedClassPtr&& embedded) { embeddeds_.push_back(std::move(embedded)); }
-
-  const Vector<SuperTypePtr>& supers() const { return supers_; }
-  void set_supers(Vector<SuperTypePtr>&& supers) { supers_ = std::move(supers); }
-
   bool is_closure() const { return closure_; }
   void set_closure(bool closure) { closure_ = closure; }
 
+  NominalType* class_type() const { return class_type_; }
+  void set_class_type(NominalType* class_type) { class_type_ = class_type; }
+
  private:
   Scope* inner_scope_;
+  Vector<TypeParamPtr> type_params_;
+  Vector<SuperTypePtr> supers_;
+  Vector<EmbeddedClassPtr> embeddeds_;
   Vector<ClassFieldPtr> fields_;
   Vector<DeclarationPtr> declarations_;
-  Vector<EmbeddedClassPtr> embeddeds_;
-  Vector<SuperTypePtr> supers_;
   bool closure_;
+  NominalType* class_type_;
+};
+
+
+class TypeParam {
+ public:
+  static auto Create(SymbolPtr&& symbol) {
+    auto p = new TypeParam(std::move(symbol));
+    return std::unique_ptr<TypeParam>(p);
+  }
+
+ protected:
+  explicit TypeParam(SymbolPtr&& symbol) :
+      symbol_(std::move(symbol)) {}
+
+ public:
+  Symbol* symbol() const { return symbol_.get(); }
+
+ private:
+  SymbolPtr symbol_;
+};
+
+
+class SuperType {
+ public:
+  static auto Create(TypeReprPtr&& type_repr) {
+    auto p = new SuperType(std::move(type_repr));
+    return std::unique_ptr<SuperType>(p);
+  }
+
+ protected:
+  explicit SuperType(TypeReprPtr&& type_repr) :
+      type_repr_(std::move(type_repr)) {}
+
+ public:
+  TypeRepr* type_repr() const { return type_repr_.get(); }
+
+ private:
+  TypeReprPtr type_repr_;
+};
+
+
+class EmbeddedClass {
+ public:
+  static auto Create(SymbolPtr&& symbol, TypeReprPtr&& type_repr) {
+    auto p = new EmbeddedClass(std::move(symbol), std::move(type_repr));
+    return std::unique_ptr<EmbeddedClass>(p);
+  }
+
+ protected:
+  explicit EmbeddedClass(SymbolPtr&& symbol, TypeReprPtr&& type_repr) :
+      symbol_(std::move(symbol)),
+      type_repr_(std::move(type_repr)) {}
+
+ public:
+  Symbol* symbol() const { return symbol_.get(); }
+  TypeRepr* type_repr() const { return type_repr_.get(); }
+
+ private:
+  SymbolPtr symbol_;
+  TypeReprPtr type_repr_;
 };
 
 
@@ -280,64 +362,6 @@ class ClassField {
  private:
   SymbolPtr symbol_;
   TypeReprPtr type_repr_;
-};
-
-
-class EmbeddedClass {
- public:
-  static auto Create(Identifier* name) {
-    auto p = new EmbeddedClass(name);
-    return std::unique_ptr<EmbeddedClass>(p);
-  }
-
- protected:
-  explicit EmbeddedClass(Identifier* name) :
-      name_(name),
-      position_(),
-      symbol_(nullptr) {}
-
- public:
-  Identifier* name() const { return name_; }
-
-  const SourceRange& position() const { return position_; }
-  void set_position(const SourceRange& position) { position_ = position; }
-
-  Symbol* symbol() const { return symbol_; }
-  void set_symbol(Symbol* symbol) { symbol_ = symbol; }
-
- private:
-  Identifier* name_;
-  SourceRange position_;
-  Symbol* symbol_;
-};
-
-
-class SuperType {
- public:
-  static auto Create(Identifier* name) {
-    auto p = new SuperType(name);
-    return std::unique_ptr<SuperType>(p);
-  }
-
- protected:
-  explicit SuperType(Identifier* name) :
-      name_(name),
-      position_(),
-      symbol_(nullptr) {}
-
- public:
-  Identifier* name() const { return name_; }
-
-  const SourceRange& position() const { return position_; }
-  void set_position(const SourceRange& position) { position_ = position; }
-
-  Symbol* symbol() const { return symbol_; }
-  void set_symbol(Symbol* symbol) { symbol_ = symbol; }
-
- private:
-  Identifier* name_;
-  SourceRange position_;
-  Symbol* symbol_;
 };
 
 
@@ -906,29 +930,24 @@ class ConditionalExpression : public Expression {
 
 class ConstructExpression : public Expression {
  public:
-  static auto Create(Identifier* class_name, ObjectInitializerPtr&& initializer) {
-    auto p = new ConstructExpression(class_name, std::move(initializer));
+  static auto Create(TypeReprPtr&& type_repr, ObjectInitializerPtr&& initializer) {
+    auto p = new ConstructExpression(std::move(type_repr), std::move(initializer));
     return std::unique_ptr<ConstructExpression>(p);
   }
 
  protected:
-  explicit ConstructExpression(Identifier* class_name, ObjectInitializerPtr&& initializer) :
+  explicit ConstructExpression(TypeReprPtr&& type_repr, ObjectInitializerPtr&& initializer) :
       Expression(Kind::kConstruct),
-      class_name_(class_name),
-      initializer_(std::move(initializer)),
-      class_symbol_(nullptr) {}
+      type_repr_(std::move(type_repr)),
+      initializer_(std::move(initializer)) {}
 
  public:
-  Identifier* class_name() const { return class_name_; }
+  TypeRepr* type_repr() const { return type_repr_.get(); }
   ObjectInitializer* initializer() const { return initializer_.get(); }
 
-  Symbol* class_symbol() const { return class_symbol_; }
-  void set_class_symbol(Symbol* class_symbol) { class_symbol_ = class_symbol; }
-
  private:
-  Identifier* class_name_;
+  TypeReprPtr type_repr_;
   ObjectInitializerPtr initializer_;
-  Symbol* class_symbol_;
 };
 
 
@@ -1081,8 +1100,9 @@ class FieldEntry {
 class TypeRepr : public Downcastable {
  public:
   enum class Kind {
-    kNull,
+    kError,
     kNamed,
+    kApplication,
     kFunction,
     kTuple,
   };
@@ -1108,16 +1128,16 @@ class TypeRepr : public Downcastable {
 };
 
 
-class NullTypeRepr : public TypeRepr {
+class ErrorTypeRepr : public TypeRepr {
  public:
   static auto Create() {
-    auto p = new NullTypeRepr();
-    return std::unique_ptr<NullTypeRepr>(p);
+    auto p = new ErrorTypeRepr();
+    return std::unique_ptr<ErrorTypeRepr>(p);
   }
 
  protected:
-  NullTypeRepr() :
-      TypeRepr(Kind::kNull) {}
+  ErrorTypeRepr() :
+      TypeRepr(Kind::kError) {}
 };
 
 
@@ -1143,6 +1163,29 @@ class NamedTypeRepr : public TypeRepr {
  private:
   Identifier* name_;
   Symbol* symbol_;
+};
+
+
+class TypeApplicationRepr : public TypeRepr {
+ public:
+  static auto Create(TypeReprPtr&& base, TupleTypeReprPtr&& args) {
+    auto p = new TypeApplicationRepr(std::move(base), std::move(args));
+    return std::unique_ptr<TypeApplicationRepr>(p);
+  }
+
+ protected:
+  TypeApplicationRepr(TypeReprPtr&& base, TupleTypeReprPtr&& args) :
+      TypeRepr(Kind::kApplication),
+      base_(std::move(base)),
+      args_(std::move(args)) {}
+
+ public:
+  TypeRepr* base() const { return base_.get(); }
+  TupleTypeRepr* args() const { return args_.get(); }
+
+ private:
+  TypeReprPtr base_;
+  TupleTypeReprPtr args_;
 };
 
 

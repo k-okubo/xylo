@@ -86,7 +86,7 @@ llvm::Value* BuildingUtil::AdjustType(llvm::Value* value, xylo::Type* from_type,
       }
     }
 
-    if (!to_type->is_monotype()) {
+    if (!to_type->is_closed_type()) {
       // to_type contains an incomplete type like bottom, meaning this value will never be called
       return value;
     }

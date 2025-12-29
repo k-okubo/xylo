@@ -17,11 +17,6 @@ llvm::StructType* InterfaceLowerer::GetOrCreateVTableStruct() {
 
 
 llvm::StructType* InterfaceLowerer::CreateVTableStruct() {
-  // ensure vtable structs for superinterfaces are created
-  for (auto& super : xylo_interface()->supers()) {
-    LoweringNode::GetOrCreateVTableStruct(super->symbol());
-  }
-
   TypeConverter tc(xylo_context(), llvm_context());
   auto nominal = xylo_nominal();
 

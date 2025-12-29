@@ -64,7 +64,7 @@ class TypeArena {
 
 
 struct InstantiatedInfo {
-  Vector<TypeMetavar*> vars;
+  Vector<Type*> vars;
 };
 using InstantiatedInfoPtr = std::unique_ptr<InstantiatedInfo>;
 
@@ -107,6 +107,7 @@ class Type : public Downcastable {
   virtual bool is_top_type() const { return false; }
   virtual bool is_bottom_type() const { return false; }
   virtual bool is_var_type() const { return false; }
+  bool is_closed_type() const;
 
   // check this <: dst
   bool IsSubtypeOf(const Type* dst) const {
@@ -139,7 +140,7 @@ class Type : public Downcastable {
   virtual Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) = 0;
 
   Type* Generalize(Scope* scope, TypeArena* arena);
-  virtual Type* Instantiate(TypeArena* arena, Substitution* subst = nullptr) const;
+  virtual Type* Instantiate(TypeArena* arena, const Vector<Type*>& args = {}, Substitution* subst = nullptr) const;
 
   const InstantiatedInfo* instantiated_info() const { return instantiated_ref_; }
   void set_instantiated_info(InstantiatedInfoPtr&& info) {
@@ -152,7 +153,6 @@ class Type : public Downcastable {
   }
 
   virtual Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) = 0;
-  bool is_monotype() const;
 
  private:
   Kind kind_;
@@ -194,14 +194,17 @@ class NominalType : public Type {
       category_(category),
       name_(name),
       scope_(nullptr),
+      generic_(false),
       origin_(nullptr),
       substitution_(nullptr),
+      member_copied_(false),
+      locked_(false),
+      supers_(),
+      embeddeds_(),
       fields_(),
       methods_(),
-      embeddeds_(),
-      supers_(),
-      member_map_(),
-      super_infos_() {}
+      super_infos_(),
+      member_map_() {}
 
   Category category() const { return category_; }
   Identifier* name() const { return name_; }
@@ -209,51 +212,90 @@ class NominalType : public Type {
   Scope* scope() const { return scope_; }
   void set_scope(Scope* scope) { scope_ = scope; }
 
+  bool is_generic() const { return generic_; }
+  void set_generic(bool generic) { generic_ = generic; }
+
   NominalType* origin() const { return origin_; }
   void set_origin(NominalType* origin) { origin_ = origin; }
 
   Substitution* substitution() const { return substitution_.get(); }
   void set_substitution(SubstitutionPtr&& subst) { substitution_ = std::move(subst); }
 
-  const Vector<MemberInfo*>& fields() const { return fields_; }
-  const Vector<MemberInfo*>& methods() const { return methods_; }
-  const Vector<MemberInfo*>& embeddeds() const { return embeddeds_; }
-  const Vector<NominalType*>& supers() const { return supers_; }
+  bool is_locked() const { return locked_; }
+  void lock() { locked_ = true; }
 
   bool equals(const Type* other) const override;
   bool is_atomic_type() const override { return true; }
+
+  const NominalType* canonical() const { return origin_ != nullptr ? origin_->canonical() : this; }
+  NominalType* canonical() { return origin_ != nullptr ? origin_->canonical() : this; }
+
+  const Vector<NominalType*>& supers() const {
+    EnsureMembers();
+    return supers_;
+  }
+
+  const Vector<MemberInfo*>& embeddeds() const {
+    EnsureMembers();
+    return embeddeds_;
+  }
+
+  const Vector<MemberInfo*>& fields() const {
+    EnsureMembers();
+    return fields_;
+  }
+
+  const Vector<MemberInfo*>& methods() const {
+    EnsureMembers();
+    return methods_;
+  }
 
   MemberInfo* GetMember(Identifier* member_name, bool include_super = true) const;
   MemberInfo* GetDeclaredMember(Identifier* member_name) const;
   bool GetMemberPath(Identifier* member_name, Vector<NominalSlot*>* out_path) const;
   bool GetSuperPath(NominalType* super, Vector<NominalSlot*>* out_path) const;
+
   void FindEmbededMembers(Identifier* member_name, Vector<MemberInfo*>* out_members) const;
   void FindSuperMembers(Identifier* member_name, Vector<MemberInfo*>* out_members) const;
   void FindSuperMethods(Vector<MemberInfo*>* out_members) const;
 
+  bool HasSuper(const NominalType* target) const;
+  bool HasEmbedded(const NominalType* target) const;
+
+  bool AddSuper(NominalType* clazz);
+  MemberInfo* AddEmbedded(Identifier* field_name, NominalType* clazz);
   MemberInfo* AddField(Identifier* field_name, Type* field_type);
   MemberInfo* AddMethod(Identifier* method_name, Type* method_type);
-  MemberInfo* AddEmbedded(Identifier* field_name, NominalType* clazz);
-  bool AddSuper(NominalType* clazz);
 
   Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
+
+ protected:
+  void EnsureMembers() const {
+    if (origin_ != nullptr && !member_copied_) {
+      const_cast<NominalType*>(this)->CopyMembersFromOrigin();
+    }
+  }
+  void CopyMembersFromOrigin();
 
  private:
   Category category_;
   Identifier* name_;
   Scope* scope_;
 
+  bool generic_;
   NominalType* origin_;
   SubstitutionPtr substitution_;
+  bool member_copied_;
 
+  bool locked_;
+  Vector<NominalType*> supers_;
+  Vector<MemberInfo*> embeddeds_;
   Vector<MemberInfo*> fields_;
   Vector<MemberInfo*> methods_;
-  Vector<MemberInfo*> embeddeds_;
-  Vector<NominalType*> supers_;
 
-  Map<Identifier*, MemberInfoPtr> member_map_;
   Vector<SuperInfoPtr> super_infos_;
+  Map<Identifier*, MemberInfoPtr> member_map_;
 };
 
 
@@ -507,12 +549,16 @@ class VariableBase : public Type {
  public:
   VariableBase(Kind kind, std::function<Type*()> create_var) :
       Type(kind),
+      locked_(false),
       upper_bound_(new IntersectionType()),
       lower_bound_(new UnionType()),
       func_shape_(nullptr),
       upper_func_shape_(nullptr),
       lower_func_shape_(nullptr),
       create_var_(create_var) {}
+
+  bool is_locked() const { return locked_; }
+  void lock() { locked_ = true; }
 
   IntersectionType* upper_bound() const { return upper_bound_.get(); }
   UnionType* lower_bound() const { return lower_bound_.get(); }
@@ -559,6 +605,8 @@ class VariableBase : public Type {
   bool GenLowerBoundFuncShape(FunctionType* new_lb, TypePairSet* visited);
 
  private:
+  bool locked_;
+
   IntersectionTypePtr upper_bound_;
   UnionTypePtr lower_bound_;
 
@@ -583,10 +631,14 @@ class TypeVariable : public VariableBase {
  public:
   explicit TypeVariable(Scope* scope) :
       VariableBase(Kind::kTyvar, create_var(scope)),
-      scope_(scope) {}
+      scope_(scope),
+      name_(nullptr) {}
 
   Scope* scope() const { return scope_; }
   void set_scope(Scope* scope) { scope_ = scope; }
+
+  Identifier* name() const { return name_; }
+  void set_name(Identifier* name) { name_ = name; }
 
   bool equals(const Type* other) const override;
   bool is_atomic_type() const override { return true; }
@@ -598,6 +650,7 @@ class TypeVariable : public VariableBase {
 
  private:
   Scope* scope_;
+  Identifier* name_;
 };
 
 
@@ -635,7 +688,7 @@ class TypeScheme : public Type {
   bool equals(const Type* other) const override;
 
   Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
-  Type* Instantiate(TypeArena* arena, Substitution* subst = nullptr) const override;
+  Type* Instantiate(TypeArena* arena, const Vector<Type*>& args = {}, Substitution* subst = nullptr) const override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
@@ -657,7 +710,7 @@ class TypeApplication : public Type {
   bool equals(const Type* other) const override;
 
   Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
-  Type* Instantiate(TypeArena* arena, Substitution* subst = nullptr) const override;
+  Type* Instantiate(TypeArena* arena, const Vector<Type*>& args = {}, Substitution* subst = nullptr) const override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:

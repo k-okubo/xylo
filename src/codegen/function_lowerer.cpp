@@ -784,7 +784,7 @@ llvm::Value* FunctionLowerer::BuildConditionalExpression(ConditionalExpression* 
 
 llvm::Value* FunctionLowerer::BuildConstructExpression(ConstructExpression* expr) {
   auto nominal_type = expr->type()->As<NominalType>();
-  auto struct_type = GetOrCreateInstanceStruct(expr->class_symbol());
+  auto struct_type = GetOrCreateInstanceStruct(expr->type()->As<NominalType>());
 
   BuildingUtil bu(this, &builder_);
   auto ptr = bu.CreateHeapAlloc(struct_type);
@@ -932,15 +932,6 @@ llvm::Value* FunctionLowerer::BuildInterfaceSelect(SelectExpression* expr, Nomin
 
 llvm::Value* FunctionLowerer::BuildBlockExpression(BlockExpression* expr) {
   return BuildBlock(expr->block());
-}
-
-
-llvm::Type* FunctionLowerer::ZonkAndConvert(xylo::Type* type, bool function_as_pointer) {
-  TypeArena arena;
-  auto zonked_type = type->Zonk(subst(), false, &arena);
-
-  TypeConverter type_converter(xylo_context(), llvm_context());
-  return type_converter.Convert(zonked_type, function_as_pointer);
 }
 
 

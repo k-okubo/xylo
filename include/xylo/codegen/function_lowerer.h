@@ -98,7 +98,6 @@ class FunctionLowerer : public DeclarationLowerer {
     }
   }
 
-  llvm::Type* ZonkAndConvert(xylo::Type* type, bool function_as_pointer);
   llvm::Value* ZonkAndAdjustType(llvm::Value* value, xylo::Type* from_type, xylo::Type* to_type);
 
   llvm::Value* outer_env_ptr() const { return outer_env_ptr_; }

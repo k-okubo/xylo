@@ -279,7 +279,7 @@ TEST(InterfaceTest, ImplementsMultipleInterfaces) {
 TEST(InterfaceTest, ImplementsUsingEmbedding) {
   auto source = R"(
     def main() {
-      let foo = new Foo{ Bar: { value: 0 } }
+      let foo = new Foo{ bar: { value: 0 } }
       set_value(foo, 42)
       return get_value(foo)
     }
@@ -301,7 +301,7 @@ TEST(InterfaceTest, ImplementsUsingEmbedding) {
     }
 
     class Foo : ValueGetter, ValueSetter {
-      embed Bar
+      embed bar: Bar
     }
 
     class Bar {
@@ -319,7 +319,7 @@ TEST(InterfaceTest, ImplementsUsingEmbedding) {
 TEST(Interface, MultipleImplementsUsingEmbedding) {
   auto source = R"(
     def main() {
-      let foo = new Foo{ Bar: { value: 0 } }
+      let foo = new Foo{ bar: { value: 0 } }
       set_value(foo, 42)
       return get_value1(foo) + get_value2(foo)
     }
@@ -346,7 +346,7 @@ TEST(Interface, MultipleImplementsUsingEmbedding) {
     }
 
     class Foo : ValueGetter, ValueContainer {
-      embed Bar
+      embed bar: Bar
     }
 
     class Bar {

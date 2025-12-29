@@ -88,15 +88,13 @@ class LoweringNode {
  public:
   FunctionExpression* GetXyloFunction(Symbol* symbol);
 
-  llvm::StructType* GetOrCreateVTableStruct(Symbol* symbol);
-  llvm::StructType* GetOrCreateInstanceStruct(Symbol* symbol);
+  llvm::StructType* GetOrCreateVTableStruct(NominalType* type);
+  llvm::StructType* GetOrCreateInstanceStruct(NominalType* type);
 
   llvm::Function* GetOrBuildMethod(NominalType* type, Identifier* name, const InstantiatedInfo* instantiated_info);
-  llvm::Function* GetOrBuildMethod(NominalType* type, Identifier* name, const MetavarVec& type_args);
   llvm::Function* GetOrBuildMethod(NominalType* type, Identifier* name, const TypeVec& type_args);
 
   llvm::Function* GetOrBuildFunction(Symbol* symbol, const InstantiatedInfo* instantiated_info);
-  llvm::Function* GetOrBuildFunction(Symbol* symbol, const MetavarVec& type_args);
   llvm::Function* GetOrBuildFunction(Symbol* symbol, const TypeVec& type_args);
 
   llvm::StructType* GetVTableStruct(NominalType* type);
@@ -115,8 +113,8 @@ class LoweringNode {
   SubstitutionPtr subst_;
   Vector<LoweringNodePtr> children_;
 
-  Map<Symbol*, InterfaceDeclaration*> interface_decls_;
-  Map<Symbol*, ClassDeclaration*> class_decls_;
+  Map<NominalType*, InterfaceDeclaration*> interface_decls_;
+  Map<NominalType*, ClassDeclaration*> class_decls_;
   Map<Symbol*, FunctionDeclaration*> func_decls_;
 
   struct PairStrHash {

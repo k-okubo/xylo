@@ -33,10 +33,9 @@ void Inferencer::VisitFileAST(FileAST* file_ast) {
 
 
 TypeVariable* CreateTypeParamVar(TypeParam* type_param, TypeArena* arena) {
-  auto var = new TypeVariable(type_param->symbol()->scope());
+  auto var = arena->Alloc<TypeVariable>(type_param->symbol()->scope());
   var->set_name(type_param->symbol()->name());
   var->lock();
-  arena->adopt_type(TypePtr(var));
   type_param->symbol()->set_type(var);
 
   return var;
@@ -56,20 +55,17 @@ Type* GeneralizeNominal(NominalType* nominal_type, const Vector<TypeParamPtr>& t
     type_param_vars.push_back(var);
   }
 
-  auto scheme = new TypeScheme(std::move(type_param_vars), nominal_type);
-  arena->adopt_type(TypePtr(scheme));
-
-  return scheme;
+  return arena->Alloc<TypeScheme>(std::move(type_param_vars), nominal_type);
 }
 
 
 void Inferencer::PreVisitInterfaceCreation(InterfaceDeclaration* decl) {
   xylo_contract(decl->symbol()->type() == nullptr);
 
-  auto interface_type = new NominalType(NominalType::Category::kInterface, decl->symbol()->name());
+  auto arena = context_->arena();
+  auto interface_type = arena->Alloc<NominalType>(NominalType::Category::kInterface, decl->symbol()->name());
   interface_type->set_scope(decl->symbol()->scope());
   decl->symbol()->set_type(interface_type);
-  context_->arena()->adopt_type(TypePtr(interface_type));
 
   decl->set_interface_type(interface_type);
   decl->symbol()->set_type(GeneralizeNominal(interface_type, decl->type_params(), context_->arena()));
@@ -79,9 +75,9 @@ void Inferencer::PreVisitInterfaceCreation(InterfaceDeclaration* decl) {
 void Inferencer::PreVisitClassCreation(ClassDeclaration* decl) {
   xylo_contract(decl->symbol()->type() == nullptr);
 
-  auto class_type = new NominalType(NominalType::Category::kClass, decl->symbol()->name());
+  auto arena = context_->arena();
+  auto class_type = arena->Alloc<NominalType>(NominalType::Category::kClass, decl->symbol()->name());
   class_type->set_scope(decl->symbol()->scope());
-  context_->arena()->adopt_type(TypePtr(class_type));
 
   decl->set_class_type(class_type);
   decl->symbol()->set_type(GeneralizeNominal(class_type, decl->type_params(), context_->arena()));
@@ -556,8 +552,7 @@ void Inferencer::VisitVarStatement(VarStatement* stmt, InferenceContext* ctx) {
   xylo_contract(stmt->symbol()->type() == nullptr);
 
   // constraints may be added by later assignment expressions
-  auto var_type = new TypeMetavar();
-  stmt->arena()->adopt_type(TypePtr(var_type));
+  auto var_type = stmt->arena()->Alloc<TypeMetavar>();
   stmt->symbol()->set_type(var_type);
 
   InferenceContext local_ctx(*ctx);
@@ -697,8 +692,7 @@ void Inferencer::VisitIdentifierExpression(IdentifierExpression* expr, Inference
 void Inferencer::VisitTupleExpression(TupleExpression* expr, InferenceContext* ctx) {
   xylo_contract(expr->type() == nullptr);
 
-  auto tuple_type = new TupleType();
-  expr->arena()->adopt_type(TypePtr(tuple_type));
+  auto tuple_type = expr->arena()->Alloc<TupleType>();
 
   for (auto& element : expr->elements()) {
     VisitExpression(element.get(), ctx);
@@ -718,8 +712,7 @@ void Inferencer::VisitFunctionExpression(FunctionExpression* expr, InferenceCont
 void Inferencer::VisitFunctionPrototype(FunctionExpression* expr, bool is_lambda) {
   xylo_contract(expr->type() == nullptr);
 
-  auto param_type = new TupleType();
-  expr->arena()->adopt_type(TypePtr(param_type));
+  auto param_type = expr->arena()->Alloc<TupleType>();
 
   // set up parameter types
   for (auto& param : expr->params()) {
@@ -732,11 +725,10 @@ void Inferencer::VisitFunctionPrototype(FunctionExpression* expr, bool is_lambda
     } else {
       Type* var;
       if (is_lambda) {
-        var = new TypeMetavar();
+        var = expr->arena()->Alloc<TypeMetavar>();
       } else {
-        var = new TypeVariable(expr->inner_scope());
+        var = expr->arena()->Alloc<TypeVariable>(expr->inner_scope());
       }
-      expr->arena()->adopt_type(TypePtr(var));
       symbol->set_type(var);
     }
 
@@ -747,12 +739,10 @@ void Inferencer::VisitFunctionPrototype(FunctionExpression* expr, bool is_lambda
   if (expr->return_type_repr() != nullptr) {
     return_type = ConvertDeclarableTypeRepr(expr->return_type_repr(), expr->arena());
   } else {
-    return_type = new TypeMetavar();
-    expr->arena()->adopt_type(TypePtr(return_type));
+    return_type = expr->arena()->Alloc<TypeMetavar>();
   }
 
-  auto func_type = new FunctionType(expr->is_closure(), param_type, return_type);
-  expr->arena()->adopt_type(TypePtr(func_type));
+  auto func_type = expr->arena()->Alloc<FunctionType>(expr->is_closure(), param_type, return_type);
   expr->set_type(func_type);
 }
 
@@ -782,14 +772,13 @@ void Inferencer::VisitApplyExpression(ApplyExpression* expr, InferenceContext* c
   VisitExpression(expr->func(), &local_ctx);
   VisitExpression(expr->args(), &local_ctx);
 
-  auto return_type = new TypeMetavar();
+  auto return_type = expr->arena()->Alloc<TypeMetavar>();
   expr->set_type(return_type);
-  expr->arena()->adopt_type(TypePtr(return_type));
 
   // accept regular functions and closures
-  auto constraint = new FunctionType(true, expr->args()->type()->As<TupleType>(), return_type);
-  expr->arena()->adopt_type(TypePtr(constraint));
+  auto constraint = expr->arena()->Alloc<FunctionType>(true, expr->args()->type()->As<TupleType>(), return_type);
 
+  // constrain callee type
   auto func_type = expr->func()->type();
   if (!func_type->ConstrainSubtypeOf(constraint)) {
     if (!func_type->is_function_type()) {
@@ -912,9 +901,8 @@ void Inferencer::VisitBinaryExpression(BinaryExpression* expr, InferenceContext*
         error("right operand must have numeric type");
       }
 
-      auto expr_type = new TypeMetavar();
+      auto expr_type = expr->arena()->Alloc<TypeMetavar>();
       expr->set_type(expr_type);
-      expr->arena()->adopt_type(TypePtr(expr_type));
 
       // take a higher numeric type as result type
       lhs_type->ConstrainSubtypeOf(expr_type);
@@ -971,9 +959,8 @@ void Inferencer::VisitBinaryExpression(BinaryExpression* expr, InferenceContext*
         error("both sides must have the same type");
       }
 
-      auto expr_type = new TypeMetavar();
+      auto expr_type = expr->arena()->Alloc<TypeMetavar>();
       expr->set_type(expr_type);
-      expr->arena()->adopt_type(TypePtr(expr_type));
 
       // take a numeric type as result type
       lhs_type->ConstrainSubtypeOf(expr_type);
@@ -1095,9 +1082,8 @@ void Inferencer::VisitConditionalExpression(ConditionalExpression* expr, Inferen
     return;
   }
 
-  auto expr_type = new TypeMetavar();
+  auto expr_type = expr->arena()->Alloc<TypeMetavar>();
   expr->set_type(expr_type);
-  expr->arena()->adopt_type(TypePtr(expr_type));
 
   if (expr->else_expr()->kind() == Expression::Kind::kNull) {
     ReportError(expr->position(), "missing 'else' branch");
@@ -1166,10 +1152,9 @@ void Inferencer::VisitSelectExpression(SelectExpression* expr, InferenceContext*
   auto object_type = expr->object()->type();
   xylo_contract(object_type != nullptr);
 
-  auto member_type = new TypeMetavar();
-  auto memcon = new MemberConstraint(expr->member_name(), member_type);
-  expr->arena()->adopt_type(TypePtr(member_type));
-  expr->arena()->adopt_type(TypePtr(memcon));
+  auto member_type = expr->arena()->Alloc<TypeMetavar>();
+  auto memcon = expr->arena()->Alloc<MemberConstraint>(expr->member_name(), member_type);
+
   expr->set_type(member_type);
   expr->set_member_constraint(memcon);
 
@@ -1237,9 +1222,8 @@ void Inferencer::VisitBlockExpression(BlockExpression* expr, InferenceContext* c
     }
 
     case Statement::Kind::kReturn: {
-      auto bottom_type = new UnionType();
+      auto bottom_type = expr->arena()->Alloc<UnionType>();
       expr->set_type(bottom_type);  // a.k.a. 'never' type
-      expr->arena()->adopt_type(TypePtr(bottom_type));
       return;
     }
 
@@ -1423,19 +1407,16 @@ Type* Inferencer::ConvertTypeApplicationRepr(TypeApplicationRepr* type_repr, Typ
 FunctionType* Inferencer::ConvertFunctionTypeRepr(FunctionTypeRepr* type_repr, TypeArena* arena) {
   auto params_type = ConvertTupleTypeRepr(type_repr->params_type(), arena);
   auto return_type = ConvertDeclarableTypeRepr(type_repr->return_type(), arena);
-  auto function_type = new FunctionType(true, params_type, return_type);
-  arena->adopt_type(TypePtr(function_type));
-  return function_type;
+  return arena->Alloc<FunctionType>(true, params_type, return_type);
 }
 
 
 TupleType* Inferencer::ConvertTupleTypeRepr(TupleTypeRepr* type_repr, TypeArena* arena) {
-  auto tuple_type = new TupleType();
+  auto tuple_type = arena->Alloc<TupleType>();
   for (auto& element : type_repr->elements()) {
     auto element_type = ConvertDeclarableTypeRepr(element.get(), arena);
     tuple_type->add_element(element_type);
   }
-  arena->adopt_type(TypePtr(tuple_type));
   return tuple_type;
 }
 

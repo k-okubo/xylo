@@ -50,8 +50,22 @@ class TypeArena {
       pool_() {}
   virtual ~TypeArena() = default;
 
-  void adopt_type(TypePtr&& type) { pool_.push_back(std::move(type)); }
-  void merge(TypeArena* other) {
+  template <class T, class... Args>
+  T* Alloc(Args&&... args) {
+    auto type = std::make_unique<T>(std::forward<Args>(args)...);
+    T* ptr = type.get();
+    pool_.push_back(std::move(type));
+    return ptr;
+  }
+
+  template <class T>
+  T* Adopt(std::unique_ptr<T>&& type) {
+    auto ptr = type.get();
+    pool_.push_back(std::move(type));
+    return ptr;
+  }
+
+  void Merge(TypeArena* other) {
     for (auto& type : other->pool_) {
       pool_.push_back(std::move(type));
     }
@@ -547,7 +561,7 @@ class UnionType : public Type {
 
 class VariableBase : public Type {
  public:
-  VariableBase(Kind kind, std::function<Type*()> create_var) :
+  VariableBase(Kind kind, std::function<Type*(TypeArena*)> create_var) :
       Type(kind),
       locked_(false),
       upper_bound_(new IntersectionType()),
@@ -613,7 +627,7 @@ class VariableBase : public Type {
   FunctionType* func_shape_;
   FunctionTypePtr upper_func_shape_;
   FunctionTypePtr lower_func_shape_;
-  std::function<Type*()> create_var_;
+  std::function<Type*(TypeArena*)> create_var_;
 
   friend class Type;
   friend class TypeScheme;
@@ -623,8 +637,8 @@ class VariableBase : public Type {
 class TypeVariable : public VariableBase {
  protected:
   static constexpr auto create_var(Scope* scope) {
-    return [scope]() {
-      return new TypeVariable(scope);
+    return [scope](TypeArena* arena) {
+      return arena->Alloc<TypeVariable>(scope);
     };
   }
 
@@ -657,8 +671,8 @@ class TypeVariable : public VariableBase {
 class TypeMetavar : public VariableBase {
  protected:
   static constexpr auto create_var() {
-    return []() {
-      return new TypeMetavar();
+    return [](TypeArena* arena) {
+      return arena->Alloc<TypeMetavar>();
     };
   }
 

@@ -899,7 +899,7 @@ bool MemberConstraint::Resolve(NominalType* nominal, TypePairSet* visited) {
 
   set_resolved_in(owner);
   set_resolved_member(member_info);
-  this->arena()->merge(&arena);
+  this->arena()->Merge(&arena);
 
   return true;
 }
@@ -1372,10 +1372,9 @@ bool VariableBase::AddToUpperBound(Type* new_ub, TypePairSet* visited) {
       }
     }
     if (ub_memcon->expected_type()->kind() == Type::Kind::kMetavar) {
-      auto ub_member_tyvar = new TypeVariable(this_tyvar->scope());
+      auto ub_member_tyvar = this->arena()->Alloc<TypeVariable>(this_tyvar->scope());
       ub_member_tyvar->ConstrainSameAs(ub_memcon->expected_type());
       ub_memcon->set_expected_type(ub_member_tyvar);
-      this->arena()->adopt_type(TypePtr(ub_member_tyvar));
     }
   }
 
@@ -1407,7 +1406,7 @@ bool VariableBase::AddToLowerBound(Type* new_lb, TypePairSet* visited) {
       if (!ConstrainUpperBound(ancestors.get(), visited)) {
         return false;
       }
-      this->arena()->adopt_type(std::move(ancestors));
+      this->arena()->Adopt(std::move(ancestors));
       break;
   }
 
@@ -1422,19 +1421,15 @@ void VariableBase::Functionize(const FunctionType* base_shape) {
   }
 
   auto params_size = base_shape->params_type()->elements().size();
-  auto params = new TupleType();
-  this->arena()->adopt_type(TypePtr(params));
+  auto params = this->arena()->Alloc<TupleType>();
 
   for (size_t i = 0; i < params_size; ++i) {
-    auto var = create_var_();  // TODO: use TypeMetavar
-    this->arena()->adopt_type(TypePtr(var));
+    auto var = create_var_(this->arena());  // TODO: use TypeMetavar
     params->add_element(var);
   }
 
-  auto return_type = create_var_();
-  func_shape_ = new FunctionType(false, params, return_type);
-  this->arena()->adopt_type(TypePtr(return_type));
-  this->arena()->adopt_type(TypePtr(func_shape_));
+  auto return_type = create_var_(this->arena());
+  func_shape_ = this->arena()->Alloc<FunctionType>(false, params, return_type);
 }
 
 
@@ -1645,9 +1640,8 @@ Type* TypeMetavar::CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMet
     outgoing = outgoing->CloseOverMetavars(scope, arena, map);
   } else {
     // The metavar cannot be determined uniquely, so it should be made into a variable.
-    outgoing = new TypeVariable(scope);
+    outgoing = arena->Alloc<TypeVariable>(scope);
     this->ConstrainSameAs(outgoing);
-    arena->adopt_type(TypePtr(outgoing));
   }
 
   map->emplace(this, outgoing);
@@ -1786,9 +1780,7 @@ Type* Type::Generalize(Scope* scope, TypeArena* arena) {
   if (ftv.vec.size() == 0) {
     return this;
   } else {
-    auto scheme = new TypeScheme(std::move(ftv.vec), this);
-    arena->adopt_type(TypePtr(scheme));
-    return scheme;
+    return arena->Alloc<TypeScheme>(std::move(ftv.vec), this);
   }
 }
 
@@ -1837,12 +1829,9 @@ Type* TypeScheme::Instantiate(TypeArena* arena, const Vector<Type*>& args, Subst
 
   for (size_t i = 0; i < vars().size(); ++i) {
     auto tyvar = vars()[i];
-    auto arg = use_metavars ? new TypeMetavar() : args[i];
+    auto arg = use_metavars ? arena->Alloc<TypeMetavar>() : args[i];
     xylo_check(subst.Insert(tyvar, arg));
     instantiated_info->vars.push_back(arg);
-    if (use_metavars) {
-      arena->adopt_type(TypePtr(arg));
-    }
   }
 
   // restore bounds
@@ -1853,18 +1842,18 @@ Type* TypeScheme::Instantiate(TypeArena* arena, const Vector<Type*>& args, Subst
     auto metavar = arg->As<TypeMetavar>();
 
     // substitute upper bounds
-    auto upper_bound = new IntersectionType();
+    auto upper_bound = std::make_unique<IntersectionType>();
     for (auto t : tyvar->upper_bound()->elements()) {
-      NormalizeUpperBound(upper_bound, subst.Apply(t, arena));
+      NormalizeUpperBound(upper_bound.get(), subst.Apply(t, arena));
     }
-    metavar->set_upper_bound(IntersectionTypePtr(upper_bound));
+    metavar->set_upper_bound(std::move(upper_bound));
 
     // substitute lower bounds
-    auto lower_bound = new UnionType();
+    auto lower_bound = std::make_unique<UnionType>();
     for (auto t : tyvar->lower_bound()->elements()) {
-      NormalizeLowerBound(lower_bound, subst.Apply(t, arena));
+      NormalizeLowerBound(lower_bound.get(), subst.Apply(t, arena));
     }
-    metavar->set_lower_bound(UnionTypePtr(lower_bound));
+    metavar->set_lower_bound(std::move(lower_bound));
 
     // substitute function shape
     if (tyvar->func_shape() != nullptr) {
@@ -1895,7 +1884,7 @@ Type* TypeApplication::Instantiate(TypeArena* arena, const Vector<Type*>& args, 
 template <typename T>
 static Type* ApplyPerElement(const Substitution* subst, Type* type, TypeArena* arena) {
   auto container = type->template As<T>();
-  auto new_container = new T();
+  auto new_container = std::make_unique<T>();
 
   bool changed = false;
   for (auto elem : container->elements()) {
@@ -1905,10 +1894,8 @@ static Type* ApplyPerElement(const Substitution* subst, Type* type, TypeArena* a
   }
 
   if (changed) {
-    arena->adopt_type(TypePtr(new_container));
-    return new_container;
+    return arena->Adopt(std::move(new_container));
   } else {
-    delete new_container;
     return container;
   }
 }
@@ -1927,11 +1914,10 @@ Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const
       // the scope of type parameters is a child of the scope of nominal types
       xylo_contract(!nominal->is_generic() || this->scope_->parent() == nominal->scope());
 
-      auto new_nominal = new NominalType(nominal->category(), nominal->name());
+      auto new_nominal = arena->Alloc<NominalType>(nominal->category(), nominal->name());
       new_nominal->set_scope(nominal->scope());
       new_nominal->set_origin(nominal);
       new_nominal->set_substitution(this->clone());
-      arena->adopt_type(TypePtr(new_nominal));
       return new_nominal;
     }
 
@@ -1941,12 +1927,11 @@ Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const
       if (expected_type == memcon->expected_type()) {
         return memcon;
       } else {
-        auto new_memcon = new MemberConstraint(memcon->member_name(), expected_type);
+        auto new_memcon = arena->Alloc<MemberConstraint>(memcon->member_name(), expected_type);
         new_memcon->SetMutable(memcon->is_mutable());
         new_memcon->set_on_error(memcon->on_error());
         new_memcon->set_resolved_in(memcon->resolved_in());
         new_memcon->set_resolved_member(memcon->resolved_member());
-        arena->adopt_type(TypePtr(new_memcon));
         return new_memcon;
       }
     }
@@ -1959,9 +1944,7 @@ Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const
       if (sbsted_params == func->params_type() && sbsted_return == func->return_type()) {
         return func;
       } else {
-        auto new_func = new FunctionType(func->is_closure(), sbsted_params->As<TupleType>(), sbsted_return);
-        arena->adopt_type(TypePtr(new_func));
-        return new_func;
+        return arena->Alloc<FunctionType>(func->is_closure(), sbsted_params->As<TupleType>(), sbsted_return);
       }
     }
 
@@ -1996,9 +1979,7 @@ Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const
       }
 
       // defer substitution until instantiation
-      auto tyapp = new TypeApplication(type, const_cast<Substitution*>(this));
-      arena->adopt_type(TypePtr(tyapp));
-      return tyapp;
+      return arena->Alloc<TypeApplication>(type, const_cast<Substitution*>(this));
     }
   }
 
@@ -2035,14 +2016,12 @@ Type* FunctionType::Zonk(const Substitution* subst, bool strict, TypeArena* aren
     }
   }
 
-  auto zonked_func = new FunctionType(closure_, params_zonked->As<TupleType>(), return_zonked);
-  arena->adopt_type(TypePtr(zonked_func));
-  return zonked_func;
+  return arena->Alloc<FunctionType>(closure_, params_zonked->As<TupleType>(), return_zonked);
 }
 
 
 Type* TupleType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) {
-  auto zonked_tuple = new TupleType();
+  auto zonked_tuple = std::make_unique<TupleType>();
 
   bool changed = false;
   for (auto elem : elements_) {
@@ -2051,16 +2030,13 @@ Type* TupleType::Zonk(const Substitution* subst, bool strict, TypeArena* arena) 
     changed |= (zonked_elem != elem);
 
     if (strict && zonked_elem->kind() == Type::Kind::kError) {
-      delete zonked_tuple;
       return ErrorType::instance();
     }
   }
 
   if (changed) {
-    arena->adopt_type(TypePtr(zonked_tuple));
-    return zonked_tuple;
+    return arena->Adopt(std::move(zonked_tuple));
   } else {
-    delete zonked_tuple;
     return this;
   }
 }
@@ -2148,9 +2124,7 @@ Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeArena* arena
       if (strict) {
         return ErrorType::instance();
       } else {
-        auto top_type = new IntersectionType();
-        arena->adopt_type(TypePtr(top_type));
-        return top_type;
+        return arena->Alloc<IntersectionType>();
       }
     }
   }
@@ -2160,9 +2134,7 @@ Type* TypeMetavar::Zonk(const Substitution* subst, bool strict, TypeArena* arena
       if (strict) {
         return ErrorType::instance();
       } else {
-        auto bottom_type = new UnionType();
-        arena->adopt_type(TypePtr(bottom_type));
-        return bottom_type;
+        return arena->Alloc<UnionType>();
       }
     }
 

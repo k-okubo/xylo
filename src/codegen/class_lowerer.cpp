@@ -12,7 +12,7 @@ llvm::StructType* ClassLowerer::GetOrCreateInstanceStruct() {
     return instance_struct_;
   }
 
-  for (auto& member_decl : xylo_class()->declarations()) {
+  for (auto& member_decl : class_decl()->declarations()) {
     RegisterDeclaration(member_decl.get());
     if (member_decl->kind() == Declaration::Kind::kFunction) {
       RegisterMethod(member_decl->symbol()->name(), member_decl->symbol());
@@ -128,15 +128,35 @@ llvm::Function* ClassLowerer::CreateVTableEntry(MemberInfo* super_method) {
   xylo_contract(method_info->kind() == MemberInfo::Kind::kMethod);
   auto method_type = method_info->As<MemberInfo>()->type();
 
+  auto get_method_func = [this](NominalType* owner, Identifier* name, const InstantiatedInfo* instantiated_info) {
+    if (owner == this->xylo_nominal()) {
+      TypeArena arena;
+      TypeVec type_args;
+
+      if (instantiated_info != nullptr) {
+        for (auto var : instantiated_info->vars) {
+          auto type = var->Zonk(subst(), false, &arena);
+          type_args.push_back(type);
+        }
+      }
+
+      return this->GetOrBuildMethod(name, type_args);
+
+    } else {
+      return LoweringNode::GetOrBuildMethod(owner, name, instantiated_info);
+    }
+  };
+
   // get method func
   TypeArena arena;
   auto instantiated_method_type = method_type->Instantiate(&arena);
   xylo_check(instantiated_method_type->ConstrainSubtypeOf(super_method_type));
   auto instantiated_info = instantiated_method_type->instantiated_info();
-  auto method_func = LoweringNode::GetOrBuildMethod(method_info->owner(), method_name, instantiated_info);
+  auto method_func = get_method_func(method_info->owner(), method_name, instantiated_info);
   auto zonked_method_type = instantiated_method_type->Zonk(subst(), false, &arena)->As<FunctionType>();
+  auto zonked_super_method_type = super_method_type->Zonk(subst(), false, &arena)->As<FunctionType>();
 
-  if (method_info->owner() == xylo_nominal() && zonked_method_type->equals(super_method_type)) {
+  if (method_info->owner() == xylo_nominal() && zonked_method_type->equals(zonked_super_method_type)) {
     return method_func;
   }
 
@@ -152,7 +172,7 @@ llvm::Function* ClassLowerer::CreateVTableEntry(MemberInfo* super_method) {
     .target_path = method_path,
     .target_func = method_func,
     .target_type = zonked_method_type,
-    .bridge_type = super_method_type,
+    .bridge_type = zonked_super_method_type,
   };
 
   return CreateMethodBridge(bridge_info);

@@ -47,7 +47,7 @@ Type* GeneralizeNominal(NominalType* nominal_type, const Vector<TypeParamPtr>& t
     return nominal_type;
   }
 
-  nominal_type->set_generic(true);
+  nominal_type->set_generic_base(true);
 
   Vector<TypeVariable*> type_param_vars;
   for (auto& type_param : type_params) {

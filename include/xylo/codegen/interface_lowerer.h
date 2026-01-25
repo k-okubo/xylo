@@ -19,7 +19,7 @@ class InterfaceLowerer : public DeclarationLowerer {
 
   ~InterfaceLowerer() = default;
 
-  InterfaceDeclaration* xylo_interface() const { return interface_decl_; }
+  InterfaceDeclaration* interface_decl() const { return interface_decl_; }
   xylo::NominalType* xylo_nominal() const { return interface_decl_->interface_type(); }
   const String& interface_name() const { return interface_name_; }
   void set_interface_name(String&& name) { interface_name_ = std::move(name); }

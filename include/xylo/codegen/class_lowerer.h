@@ -22,13 +22,13 @@ class ClassLowerer : public DeclarationLowerer {
 
   ~ClassLowerer() = default;
 
-  ClassDeclaration* xylo_class() const { return class_decl_; }
+  ClassDeclaration* class_decl() const { return class_decl_; }
   xylo::NominalType* xylo_nominal() const { return class_decl_->class_type(); }
   const String& class_name() const { return class_name_; }
   void set_class_name(String&& name) { class_name_ = std::move(name); }
 
   const String& mangled_name() const override { return class_name_; }
-  Scope* scope() const override { return xylo_class()->inner_scope(); }
+  Scope* scope() const override { return class_decl()->inner_scope(); }
   llvm::StructType* scope_data_type() const override { return instance_struct_; }
 
   llvm::StructType* GetOrCreateInstanceStruct();

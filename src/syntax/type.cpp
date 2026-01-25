@@ -251,9 +251,10 @@ void NominalType::CopyMembersFromOrigin() {
   xylo_contract(origin_ != nullptr);
   xylo_contract(substitution_ != nullptr);
   xylo_contract(!member_copied_);
-  xylo_contract(origin_->is_locked());
 
   origin_->EnsureMembers();
+  xylo_contract(origin_->is_locked());
+
   auto subst = substitution();
   auto arena = this->arena();
 
@@ -489,8 +490,10 @@ static bool ApplySubtypingRules(S src, D dst, const P& proc) {
     auto src_nominal = src->template As<NominalType>();
     auto dst_nominal = dst->template As<NominalType>();
 
-    if (src_nominal->origin() != nullptr && src_nominal->origin() == dst_nominal->origin()) {
-      if (ApplySubtypingRules(src_nominal->substitution(), dst_nominal->substitution(), proc) &&
+    if (src_nominal->origin() != nullptr && dst_nominal->origin()) {
+      if (proc.recurse(src_nominal->origin(), dst_nominal->origin(), proc) &&
+          proc.recurse(dst_nominal->origin(), src_nominal->origin(), proc) &&
+          ApplySubtypingRules(src_nominal->substitution(), dst_nominal->substitution(), proc) &&
           ApplySubtypingRules(dst_nominal->substitution(), src_nominal->substitution(), proc)) {
         return true;
       }
@@ -824,11 +827,11 @@ static void ForeachSupertype(Type* t, F proc) {
 
 
 static void PutCommonAncestorsOfPair(Type* t1, Type* t2, Vector<Type*>* ancestors) {
-  if (t2->IsSubtypeOf(t1)) {
+  if (t2->CanConstrainSubtypeOf(t1)) {
     ancestors->push_back(t1);
     return;
   }
-  if (t1->IsSubtypeOf(t2)) {
+  if (t1->CanConstrainSubtypeOf(t2)) {
     ancestors->push_back(t2);
     return;
   }
@@ -1679,7 +1682,7 @@ struct TyvarCollection {
 };
 
 
-static void CollectFreeTyvars(Scope* scope, Substitution* subst, TyvarCollection* out_ftv);
+static void CollectFreeTyvars(Scope* scope, const Substitution* subst, TyvarCollection* out_ftv);
 
 static void CollectFreeTyvars(Scope* scope, Type* type, TyvarCollection* out_ftv) {
   switch (type->kind()) {
@@ -1750,7 +1753,7 @@ static void CollectFreeTyvars(Scope* scope, Type* type, TyvarCollection* out_ftv
 }
 
 
-static void CollectFreeTyvars(Scope* scope, Substitution* subst, TyvarCollection* out_ftv) {
+static void CollectFreeTyvars(Scope* scope, const Substitution* subst, TyvarCollection* out_ftv) {
   for (auto& [param, arg] : subst->entries()) {
     CollectFreeTyvars(scope, arg, out_ftv);
   }
@@ -1792,7 +1795,7 @@ static void NormalizeUpperBound(IntersectionType* upper_bound, Type* ub) {
     auto ub_metavar = ub->As<TypeMetavar>();
     for (auto ub_elem : ub_metavar->upper_bound()->elements()) {
       if (ub_elem->kind() != Type::Kind::kMetavar) {
-        NormalizeUpperBound(upper_bound, ub_elem);
+        upper_bound->add_element(ub_elem);
       }
     }
   }
@@ -1806,25 +1809,25 @@ static void NormalizeLowerBound(UnionType* lower_bound, Type* lb) {
     auto lb_metavar = lb->As<TypeMetavar>();
     for (auto lb_elem : lb_metavar->lower_bound()->elements()) {
       if (lb_elem->kind() != Type::Kind::kMetavar) {
-        NormalizeLowerBound(lower_bound, lb_elem);
+        lower_bound->add_element(lb_elem);
       }
     }
   }
 }
 
 
-Type* Type::Instantiate(TypeArena* arena, const Vector<Type*>& args, Substitution* parent) const {
+Type* Type::Instantiate(TypeArena* arena, const Vector<Type*>& args) const {
   xylo_contract(args.empty());
   return const_cast<Type*>(this);
 }
 
 
-Type* TypeScheme::Instantiate(TypeArena* arena, const Vector<Type*>& args, Substitution* parent) const {
+Type* TypeScheme::Instantiate(TypeArena* arena, const Vector<Type*>& args) const {
   xylo_contract(args.empty() || args.size() == vars().size());
   bool use_metavars = args.empty();
 
   // prepare subst: scheme->vars() => fresh metavars
-  Substitution subst(parent);
+  Substitution subst;
   InstantiatedInfoPtr instantiated_info = std::make_unique<InstantiatedInfo>();
 
   for (size_t i = 0; i < vars().size(); ++i) {
@@ -1870,14 +1873,44 @@ Type* TypeScheme::Instantiate(TypeArena* arena, const Vector<Type*>& args, Subst
 }
 
 
-Type* TypeApplication::Instantiate(TypeArena* arena, const Vector<Type*>& args, Substitution* parent) const {
-  xylo_contract(substitution()->parent() == nullptr);
-  substitution()->set_parent(parent);
-  Finally _([this]() {
-    substitution()->set_parent(nullptr);
-  });
+Type* TypeApplication::Instantiate(TypeArena* arena, const Vector<Type*>& args) const {
+  auto sub_instantiated = target()->Instantiate(arena, args);
+  auto subst = this->substitution();
 
-  return target()->Instantiate(arena, args, substitution());
+  for (auto arg : sub_instantiated->instantiated_info()->vars) {
+    if (arg->kind() != Type::Kind::kMetavar) {
+      continue;
+    }
+    auto metavar = arg->As<TypeMetavar>();
+
+    // substitute upper bounds
+    auto upper_bound = std::make_unique<IntersectionType>();
+    for (auto t : metavar->upper_bound()->elements()) {
+      NormalizeUpperBound(upper_bound.get(), subst->Apply(t, arena));
+    }
+    metavar->set_upper_bound(std::move(upper_bound));
+
+    // substitute lower bounds
+    auto lower_bound = std::make_unique<UnionType>();
+    for (auto t : metavar->lower_bound()->elements()) {
+      NormalizeLowerBound(lower_bound.get(), subst->Apply(t, arena));
+    }
+    metavar->set_lower_bound(std::move(lower_bound));
+
+    // substitute function shape
+    if (metavar->func_shape() != nullptr) {
+      auto func_shape = subst->Apply(metavar->func_shape(), arena);
+      metavar->set_func_shape(func_shape->As<FunctionType>());
+      metavar->set_upper_func_shape(metavar->upper_func_shape());
+      metavar->set_lower_func_shape(metavar->lower_func_shape());
+    }
+  }
+
+  auto result = subst->Apply(sub_instantiated, arena);
+  if (result != sub_instantiated) {
+    result->set_instantiated_info(sub_instantiated->instantiated_info());
+  }
+  return result;
 }
 
 
@@ -1907,18 +1940,46 @@ Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const
       return type;
 
     case Type::Kind::kNominal: {
-      auto nominal = type->As<NominalType>();
-      if (!(nominal->is_generic() || nominal->scope()->is_inner_than_equal(this->scope_))) {
-        return type;
-      }
-      // the scope of type parameters is a child of the scope of nominal types
-      xylo_contract(!nominal->is_generic() || this->scope_->parent() == nominal->scope());
+      auto instantiate_nominal = [this, arena](NominalType* nominal, NominalType::InstantiationMode mode) {
+        auto new_nominal = arena->Alloc<NominalType>(nominal->category(), nominal->name());
+        new_nominal->set_scope(nominal->scope());
+        new_nominal->set_origin(nominal);
+        new_nominal->set_substitution(this->clone());
+        new_nominal->set_instantiation_mode(mode);
+        return new_nominal;
+      };
 
-      auto new_nominal = arena->Alloc<NominalType>(nominal->category(), nominal->name());
-      new_nominal->set_scope(nominal->scope());
-      new_nominal->set_origin(nominal);
-      new_nominal->set_substitution(this->clone());
-      return new_nominal;
+      auto substitute_substitution = [this, arena](NominalType* nominal) {
+        auto new_subst = this->Apply(nominal->substitution(), arena);
+        if (new_subst) {
+          auto new_nominal = arena->Alloc<NominalType>(nominal->category(), nominal->name());
+          new_nominal->set_scope(nominal->scope());
+          new_nominal->set_origin(nominal->origin());
+          new_nominal->set_substitution(std::move(new_subst));
+          new_nominal->set_instantiation_mode(nominal->instantiation_mode());
+          return new_nominal;
+        } else {
+          return nominal;
+        }
+      };
+
+      auto nominal = type->As<NominalType>();
+
+      if (nominal->scope()->is_inner_than_equal(this->scope())) {
+        return instantiate_nominal(nominal, NominalType::InstantiationMode::kLexical);
+
+      } else if (nominal->is_generic_base()) {
+        // the scope of type parameters is a child scope of the nominal type
+        xylo_contract(this->scope()->parent() == nominal->scope());
+        return instantiate_nominal(nominal, NominalType::InstantiationMode::kGeneric);
+
+      } else if (nominal->is_generic_instantiation()) {
+        xylo_contract(nominal->substitution() != nullptr);
+        return substitute_substitution(nominal);
+
+      } else {
+        return nominal;
+      }
     }
 
     case Type::Kind::kMemberConstraint: {
@@ -1984,6 +2045,26 @@ Type* Substitution::Apply(Type* type, TypeArena* arena, bool savable_this) const
   }
 
   xylo_unreachable();
+}
+
+
+SubstitutionPtr Substitution::Apply(Substitution* subst, TypeArena* arena) const {
+  auto new_subst = std::make_unique<Substitution>(subst->parent());
+  bool changed = false;
+
+  for (auto& [param, arg] : subst->entries()) {
+    auto sbsted_arg = this->Apply(arg, arena);
+    if (sbsted_arg != arg) {
+      changed = true;
+    }
+    new_subst->Insert(param, sbsted_arg);
+  }
+
+  if (changed) {
+    return new_subst;
+  } else {
+    return nullptr;
+  }
 }
 
 

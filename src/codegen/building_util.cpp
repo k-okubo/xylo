@@ -27,7 +27,7 @@ llvm::Value* BuildingUtil::MemberPtr(llvm::StructType* type, llvm::Value* ptr, c
 
 
 llvm::Value* BuildingUtil::AdjustType(llvm::Value* value, xylo::Type* from_type, xylo::Type* to_type) {
-  if (from_type == to_type) {
+  if (from_type->equals(to_type)) {
     return value;
   }
 

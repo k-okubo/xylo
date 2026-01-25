@@ -2489,6 +2489,73 @@ TEST(InferencerTest, NestedClassInPolymorphicFunction4) {
 }
 
 
+TEST(InferencerTest, NestedClassInMethod) {
+  auto source = R"(
+    def main() {
+      let foo = outer(new Dog{})
+      let bar = foo.get_bar(new Cat{})
+      let a = bar.get(true)
+      let b = bar.get(false)
+    }
+
+    def outer(a) {
+      return new Foo{}
+
+      class Foo {
+        def get_bar(b) {
+          return new Bar{}
+
+          class Bar {
+            def get(c) {
+              return c ? a : b
+            }
+          }
+        }
+      }
+    }
+
+    interface Animal {}
+    class Dog : Animal {}
+    class Cat : Animal {}
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(inferencer.has_diagnostics());
+
+  ASSERT_GE(file_ast->declarations().size(), 5);
+  ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
+  auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
+  auto& main_statements = main_decl->func()->body()->statements();
+  ASSERT_GE(main_statements.size(), 4);
+
+  auto let_foo_stmt = main_statements[0]->As<LetStatement>();
+  auto let_foo_expr = let_foo_stmt->expr();
+
+  auto let_bar_stmt = main_statements[1]->As<LetStatement>();
+  auto let_bar_expr = let_bar_stmt->expr();
+
+  auto let_a_stmt = main_statements[2]->As<LetStatement>();
+  auto let_a_expr = let_a_stmt->expr();
+
+  auto let_b_stmt = main_statements[3]->As<LetStatement>();
+  auto let_b_expr = let_b_stmt->expr();
+
+  auto animal_interface_decl = file_ast->declarations()[2]->As<InterfaceDeclaration>();
+  auto animal_type = animal_interface_decl->symbol()->type();
+
+  Substitution subst;
+  TypeArena arena;
+  EXPECT_EQ(let_foo_expr->type()->Zonk(&subst, true, &arena)->As<NominalType>()->name()->str().cpp_str(), "Foo");
+  EXPECT_EQ(let_bar_expr->type()->Zonk(&subst, true, &arena)->As<NominalType>()->name()->str().cpp_str(), "Bar");
+  EXPECT_EQ(let_a_expr->type()->Zonk(&subst, true, &arena), animal_type);
+  EXPECT_EQ(let_b_expr->type()->Zonk(&subst, true, &arena), animal_type);
+}
+
+
 TEST(InferencerTest, Embedding_Basic) {
   auto source = R"(
     def main() {
@@ -2960,6 +3027,55 @@ TEST(InferencerTest, GenericClass_Basic) {
 }
 
 
+TEST(InferencerTest, GenericClass_FieldTypeMismatch) {
+  auto source = R"(
+    def main() {
+      let foo = new Foo[int]{ value: 3.14 }
+    }
+
+    class Foo[T] {
+      value: T
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "field 'value' has incompatible type");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 3);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 31);
+}
+
+
+TEST(InferencerTest, GenericClass_MethodTypeMismatch) {
+  auto source = R"(
+    def main() {
+      let foo = new Foo[int]{}
+      foo.id(3.14)
+    }
+
+    class Foo[T] {
+      def id(x: T) => x
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_TRUE(inferencer.has_diagnostics());
+  EXPECT_EQ(inferencer.diagnostics().size(), 1);
+  EXPECT_EQ(inferencer.diagnostics()[0].message, "function call has incompatible argument types");
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 4);
+  EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 13);
+}
+
+
 TEST(InferencerTest, GenericClass_MissingTypeArgument) {
   auto source = R"(
     def foo(x: Foo) {}
@@ -3098,6 +3214,53 @@ TEST(InferencerTest, GenericClass_CannotInherit2) {
   EXPECT_EQ(inferencer.diagnostics()[0].message, "type 'Bar[T]' cannot be inherited from");
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.line, 2);
   EXPECT_EQ(inferencer.diagnostics()[0].position.start.column, 20);
+}
+
+
+TEST(InferencerTest, GenericInterface_Basic) {
+  auto source = R"(
+    def main() {
+      let foo_int = new Foo[int]{value: 42}
+      let value = bridge_int(foo_int)
+    }
+
+    def bridge_int(x: Box[int]) {
+      return x.get_value()
+    }
+
+    class Foo[T] : Box[T] {
+      value: T
+      def get_value() => value
+    }
+
+    interface Box[V] {
+      def get_value(): V
+    }
+  )";
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source);
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(inferencer.has_diagnostics());
+
+  ASSERT_GE(file_ast->declarations().size(), 4);
+  ASSERT_EQ(file_ast->declarations()[0]->symbol()->name()->str().cpp_str(), "main");
+  auto main_decl = file_ast->declarations()[0]->As<FunctionDeclaration>();
+  auto& main_statements = main_decl->func()->body()->statements();
+  ASSERT_GE(main_statements.size(), 2);
+
+  auto let_stmt1 = main_statements[0]->As<LetStatement>();
+  auto let_expr1 = let_stmt1->expr();
+
+  auto let_stmt2 = main_statements[1]->As<LetStatement>();
+  auto let_expr2 = let_stmt2->expr();
+
+  Substitution subst;
+  TypeArena arena;
+  EXPECT_EQ(let_expr1->type()->Zonk(&subst, true, &arena)->As<NominalType>()->name()->str().cpp_str(), "Foo");
+  EXPECT_EQ(let_expr2->type()->Zonk(&subst, true, &arena), context.int_type());
 }
 
 

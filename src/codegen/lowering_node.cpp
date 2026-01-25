@@ -132,16 +132,14 @@ llvm::StructType* LoweringNode::GetOrCreateInstanceStruct(NominalType* type) {
 
 llvm::Function* LoweringNode::GetOrBuildMethod(NominalType* type, Identifier* name,
                                                const InstantiatedInfo* instantiated_info) {
-  if (!instantiated_info) {
-    return GetOrBuildMethod(type, name, TypeVec{});
-  }
-
   TypeArena arena;
   TypeVec type_args;
 
-  for (auto var : instantiated_info->vars) {
-    auto type = var->Zonk(subst(), false, &arena);
-    type_args.push_back(type);
+  if (instantiated_info != nullptr) {
+    for (auto var : instantiated_info->vars) {
+      auto type = var->Zonk(subst(), false, &arena);
+      type_args.push_back(type);
+    }
   }
 
   return GetOrBuildMethod(type, name, type_args);
@@ -218,21 +216,14 @@ InterfaceLowerer* LoweringNode::GetInterfaceLowerer(NominalType* type, const Sub
 
   return ProcInDeclarationScope(type, subst, [](LoweringNode* node, NominalType* type) {
     NominalType* origin_type;
-    Vector<Type*> type_args;
-    TypeArena arena;
-
-    if (type->substitution() != nullptr) {
+    if (type->is_generic_instantiation()) {
       origin_type = type->origin();
-      for (auto t : type->substitution()->args()) {
-        type_args.push_back(t);
-      }
     } else {
       origin_type = type;
     }
-    xylo_contract(origin_type->origin() == nullptr);
-    xylo_contract(origin_type->substitution() == nullptr);
+    xylo_contract(origin_type->is_instantiated() == false);
 
-    auto key = std::make_pair(type, node->TypeArgsKey(type_args));
+    auto key = std::make_pair(type, HString{});  // use same lowerer for all instantiations
     auto sint_it = node->specialized_interfaces_.find(key);
     if (sint_it == node->specialized_interfaces_.end()) {
       // create new lowerer
@@ -240,7 +231,7 @@ InterfaceLowerer* LoweringNode::GetInterfaceLowerer(NominalType* type, const Sub
       xylo_contract(decl_it != node->interface_decls_.end());
       auto interface_decl = decl_it->second;
 
-      auto ext_subst = node->ExtendSubstitution(interface_decl->symbol()->type(), type_args);
+      auto ext_subst = std::make_unique<Substitution>(node->subst());
       auto interface_lowerer = new InterfaceLowerer(node, std::move(ext_subst), interface_decl);
       interface_lowerer->set_interface_name(ChildMangledName(node, interface_decl->symbol(), key.second));
 
@@ -258,21 +249,20 @@ InterfaceLowerer* LoweringNode::GetInterfaceLowerer(NominalType* type, const Sub
 ClassLowerer* LoweringNode::GetClassLowerer(NominalType* type, const Substitution* subst) {
   xylo_contract(type->category() == NominalType::Category::kClass);
 
-  return ProcInDeclarationScope(type, subst, [](LoweringNode* node, NominalType* type) {
+  return ProcInDeclarationScope(type, subst, [subst](LoweringNode* node, NominalType* type) {
     NominalType* origin_type;
     Vector<Type*> type_args;
     TypeArena arena;
 
-    if (type->substitution() != nullptr) {
+    if (type->is_generic_instantiation()) {
       origin_type = type->origin();
       for (auto t : type->substitution()->args()) {
-        type_args.push_back(t);
+        type_args.push_back(t->Zonk(subst, false, &arena));
       }
     } else {
       origin_type = type;
     }
-    xylo_contract(origin_type->origin() == nullptr);
-    xylo_contract(origin_type->substitution() == nullptr);
+    xylo_contract(origin_type->is_instantiated() == false);
 
     auto key = std::make_pair(origin_type, node->TypeArgsKey(type_args));
     auto sclass_it = node->specialized_classes_.find(key);

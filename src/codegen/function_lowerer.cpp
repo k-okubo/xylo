@@ -806,13 +806,13 @@ void FunctionLowerer::BuildObjectInitializer(ObjectInitializer* init, xylo::Nomi
   auto class_lowerer = GetClassLowerer(obj_type);
   xylo_contract(class_lowerer != nullptr);
 
-  auto xylo_class = class_lowerer->xylo_class();
+  auto class_decl = class_lowerer->class_decl();
   auto struct_type = class_lowerer->GetOrCreateInstanceStruct();
 
   // store outer environment pointer
   auto env_ptr_field = builder_.CreateStructGEP(struct_type, ptr, 0);
-  if (xylo_class->is_closure()) {
-    auto [env_ptr, _] = LoadOuterEnvironmentPtr(xylo_class->symbol());
+  if (class_decl->is_closure()) {
+    auto [env_ptr, _] = LoadOuterEnvironmentPtr(class_decl->symbol());
     builder_.CreateStore(env_ptr, env_ptr_field);
   } else {
     builder_.CreateStore(null_ptr(), env_ptr_field);

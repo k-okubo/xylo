@@ -143,7 +143,7 @@ class LoweringNode {
 
     // move down to type declaration scope
     if (this->scope() != type->scope()) {
-      bool specialized = (type->substitution() != nullptr && this->scope() == type->substitution()->scope()->parent());
+      bool specialized = type->is_lexical_instantiation() && this->scope() == type->substitution()->scope()->parent();
 
       Vector<Type*> type_args;
       TypeArena arena;

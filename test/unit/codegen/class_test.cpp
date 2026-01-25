@@ -702,6 +702,45 @@ TEST(ClassTest, CLassInClass) {
 }
 
 
+TEST(ClassTest, ClassInMethod) {
+  auto source = R"(
+    def main() {
+      let foo_int = outer(10)
+      let bar_int = foo_int.get_bar(20)
+      let val_int_a = bar_int.get(true)
+      let val_int_b = bar_int.get(false)
+
+      let foo_float = outer(1.5)
+      let bar_float = foo_float.get_bar(2.5)
+      let val_float_a = bar_float.get(true)
+      let val_float_b = bar_float.get(false)
+
+      let check = (val_int_a == 20) && (val_int_b == 40) && (val_float_a == 3.0) && (val_float_b == 5.0)
+      return check ? 1 : 0
+    }
+
+    def outer(a) {
+      return new Foo{}
+
+      class Foo {
+        def get_bar(b) {
+          return new Bar{}
+
+          class Bar {
+            def get(c) {
+              return (c ? a : b) * 2
+            }
+          }
+        }
+      }
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
+}
+
+
 TEST(ClassTest, Embedding_PromotedFieldRead) {
   auto source = R"(
     class Bar {

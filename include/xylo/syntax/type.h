@@ -154,7 +154,7 @@ class Type : public Downcastable {
   virtual Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) = 0;
 
   Type* Generalize(Scope* scope, TypeArena* arena);
-  virtual Type* Instantiate(TypeArena* arena, const Vector<Type*>& args = {}, Substitution* subst = nullptr) const;
+  virtual Type* Instantiate(TypeArena* arena, const Vector<Type*>& args = {}) const;
 
   const InstantiatedInfo* instantiated_info() const { return instantiated_ref_; }
   void set_instantiated_info(InstantiatedInfoPtr&& info) {
@@ -203,14 +203,21 @@ class NominalType : public Type {
     kConcept,
   };
 
+  enum class InstantiationMode {
+    kNone,
+    kGeneric,
+    kLexical,
+  };
+
   explicit NominalType(Category category, Identifier* name) :
       Type(Kind::kNominal),
       category_(category),
       name_(name),
       scope_(nullptr),
-      generic_(false),
+      generic_base_(false),
       origin_(nullptr),
       substitution_(nullptr),
+      instantiation_mode_(InstantiationMode::kNone),
       member_copied_(false),
       locked_(false),
       supers_(),
@@ -226,14 +233,23 @@ class NominalType : public Type {
   Scope* scope() const { return scope_; }
   void set_scope(Scope* scope) { scope_ = scope; }
 
-  bool is_generic() const { return generic_; }
-  void set_generic(bool generic) { generic_ = generic; }
+  bool is_generic_base() const { return generic_base_; }
+  void set_generic_base(bool generic_base) { generic_base_ = generic_base; }
 
   NominalType* origin() const { return origin_; }
   void set_origin(NominalType* origin) { origin_ = origin; }
 
   Substitution* substitution() const { return substitution_.get(); }
   void set_substitution(SubstitutionPtr&& subst) { substitution_ = std::move(subst); }
+
+  InstantiationMode instantiation_mode() const { return instantiation_mode_; }
+  void set_instantiation_mode(InstantiationMode mode) { instantiation_mode_ = mode; }
+
+  bool is_instantiated() const { return instantiation_mode_ != InstantiationMode::kNone; }
+
+  bool is_generic_instantiation() const { return instantiation_mode_ == InstantiationMode::kGeneric; }
+
+  bool is_lexical_instantiation() const { return instantiation_mode_ == InstantiationMode::kLexical; }
 
   bool is_locked() const { return locked_; }
   void lock() { locked_ = true; }
@@ -297,9 +313,10 @@ class NominalType : public Type {
   Identifier* name_;
   Scope* scope_;
 
-  bool generic_;
+  bool generic_base_;
   NominalType* origin_;
   SubstitutionPtr substitution_;
+  InstantiationMode instantiation_mode_;
   bool member_copied_;
 
   bool locked_;
@@ -631,6 +648,7 @@ class VariableBase : public Type {
 
   friend class Type;
   friend class TypeScheme;
+  friend class TypeApplication;
 };
 
 
@@ -702,7 +720,7 @@ class TypeScheme : public Type {
   bool equals(const Type* other) const override;
 
   Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
-  Type* Instantiate(TypeArena* arena, const Vector<Type*>& args = {}, Substitution* subst = nullptr) const override;
+  Type* Instantiate(TypeArena* arena, const Vector<Type*>& args = {}) const override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
@@ -724,7 +742,7 @@ class TypeApplication : public Type {
   bool equals(const Type* other) const override;
 
   Type* CloseOverMetavars(Scope* scope, TypeArena* arena, Map<TypeMetavar*, Type*>* map) override;
-  Type* Instantiate(TypeArena* arena, const Vector<Type*>& args = {}, Substitution* subst = nullptr) const override;
+  Type* Instantiate(TypeArena* arena, const Vector<Type*>& args = {}) const override;
   Type* Zonk(const Substitution* subst, bool strict, TypeArena* arena) override;
 
  private:
@@ -770,6 +788,7 @@ class Substitution {
   }
 
   Type* Apply(Type* type, TypeArena* arena, bool savable_this = false) const;
+  SubstitutionPtr Apply(Substitution* subst, TypeArena* arena) const;
 
   SubstitutionPtr clone() const {
     xylo_contract(parent() == nullptr);

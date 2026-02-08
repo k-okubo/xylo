@@ -770,7 +770,8 @@ llvm::Value* FunctionLowerer::BuildConditionalExpression(ConditionalExpression* 
     return nullptr;  // reachable but value not required
   }
 
-  auto phi = builder_.CreatePHI(then_value->getType(), 2);
+  auto merged_llvm_type = then_value != nullptr ? then_value->getType() : else_value->getType();
+  auto phi = builder_.CreatePHI(merged_llvm_type, 2);
   if (expr->is_reachable_then()) {
     phi->addIncoming(then_value, then_bb);
   }

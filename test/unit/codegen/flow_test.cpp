@@ -94,7 +94,25 @@ TEST(FlowTest, NestedBranchedValue) {
 }
 
 
-TEST(FlowTest, HalfReachable) {
+TEST(FlowTest, HalfReachable_ThenReturn) {
+  auto source = R"(
+    def main() {
+      let a = if (false) {
+        return 20
+      } else {
+        10
+      }
+
+      return a
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 10);
+}
+
+
+TEST(FlowTest, HalfReachable_ElseReturn) {
   auto source = R"(
     def main() {
       let a = if (true) {

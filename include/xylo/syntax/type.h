@@ -780,7 +780,9 @@ class Substitution {
     }
     if (scope_ == var->scope()) {
       auto [_, success] = entries_.emplace(var, type);
-      args_.push_back(type);
+      if (success) {
+        args_.push_back(type);
+      }
       return success;
     } else {
       return false;

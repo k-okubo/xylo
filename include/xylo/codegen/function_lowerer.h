@@ -62,6 +62,7 @@ class FunctionLowerer : public DeclarationLowerer {
   llvm::Value* BuildApplyExpression(ApplyExpression* expr);
   llvm::Value* BuildUnaryExpression(UnaryExpression* expr);
   llvm::Value* BuildBinaryExpression(BinaryExpression* expr);
+  llvm::Value* BuildLogicalOperationExpression(BinaryExpression* expr);
   llvm::Value* BuildConditionalExpression(ConditionalExpression* expr);
   llvm::Value* BuildConstructExpression(ConstructExpression* expr);
   llvm::Value* BuildSelectExpression(SelectExpression* expr, llvm::Value** out_closure_env);

@@ -380,6 +380,18 @@ TEST(OperatorTest, LogicalAndFalseFalse) {
 }
 
 
+TEST(OperatorTest, LogicalAndShortcircuit) {
+  auto source = R"(
+    def main() {
+      return (false && if (true) { return 8 } else true) ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 0);
+}
+
+
 TEST(OperatorTest, LogicalOrTrueTrue) {
   auto source = R"(
     def main() {
@@ -425,6 +437,18 @@ TEST(OperatorTest, LogicalOrFalseFalse) {
 
   auto result = CompileAndRun(source);
   EXPECT_EQ(result, 0);
+}
+
+
+TEST(OperatorTest, LogicalOrShortcircuit) {
+  auto source = R"(
+    def main() {
+      return (true || if (true) { return 8 } else false) ? 1 : 0
+    }
+  )";
+
+  auto result = CompileAndRun(source);
+  EXPECT_EQ(result, 1);
 }
 
 

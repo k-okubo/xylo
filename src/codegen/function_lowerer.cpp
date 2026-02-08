@@ -472,6 +472,15 @@ llvm::Value* FunctionLowerer::BuildUnaryExpression(UnaryExpression* expr) {
 
 
 llvm::Value* FunctionLowerer::BuildBinaryExpression(BinaryExpression* expr) {
+  switch (expr->op()) {
+    case Token::kLAnd:
+    case Token::kLOr:
+      return BuildLogicalOperationExpression(expr);
+
+    default:
+      break;
+  }
+
   auto to_float = [this](llvm::Value* value) {
     if (value->getType()->isIntegerTy()) {
       return builder_.CreateSIToFP(value, llvm::Type::getDoubleTy(llvm_context()));
@@ -533,12 +542,9 @@ llvm::Value* FunctionLowerer::BuildBinaryExpression(BinaryExpression* expr) {
       }
 
     case Token::kAnd:
-    case Token::kLAnd: {
       return builder_.CreateAnd(lhs_value, rhs_value);
-    }
 
     case Token::kOr:
-    case Token::kLOr:
       return builder_.CreateOr(lhs_value, rhs_value);
 
     case Token::kXor:
@@ -711,6 +717,43 @@ llvm::Value* FunctionLowerer::BuildBinaryExpression(BinaryExpression* expr) {
 }
 
 
+llvm::Value* FunctionLowerer::BuildLogicalOperationExpression(BinaryExpression* expr) {
+  xylo_contract(expr->op() == Token::kLAnd || expr->op() == Token::kLOr);
+
+  // lhs block
+  auto lhs_value = BuildExpression(expr->lhs());
+  auto lhs_bb = builder_.GetInsertBlock();
+
+  // rhs and merge blocks
+  auto func = builder_.GetInsertBlock()->getParent();
+  auto rhs_bb = llvm::BasicBlock::Create(llvm_context(), "logical_rhs", func);
+  auto merge_bb = llvm::BasicBlock::Create(llvm_context(), "logical_cont", func);
+
+  if (expr->op() == Token::kLAnd) {
+    builder_.CreateCondBr(lhs_value, rhs_bb, merge_bb);
+  } else {  // Token::kLOr
+    builder_.CreateCondBr(lhs_value, merge_bb, rhs_bb);
+  }
+
+  // rhs block
+  rhs_bb->moveAfter(lhs_bb);
+  builder_.SetInsertPoint(rhs_bb);
+  auto rhs_value = BuildExpression(expr->rhs());
+  builder_.CreateBr(merge_bb);
+  rhs_bb = builder_.GetInsertBlock();
+
+  // merge block
+  merge_bb->moveAfter(rhs_bb);
+  builder_.SetInsertPoint(merge_bb);
+
+  auto phi = builder_.CreatePHI(llvm::Type::getInt1Ty(llvm_context()), 2);
+  phi->addIncoming(lhs_value, lhs_bb);
+  phi->addIncoming(rhs_value, rhs_bb);
+
+  return phi;
+}
+
+
 llvm::Value* FunctionLowerer::BuildConditionalExpression(ConditionalExpression* expr) {
   TypeArena arena;
   auto then_expr_type = expr->then_expr()->type();
@@ -718,14 +761,15 @@ llvm::Value* FunctionLowerer::BuildConditionalExpression(ConditionalExpression* 
   auto merged_type = expr->type()->Zonk(subst(), false, &arena);
   bool merge_bb_reachable = expr->is_reachable_then() || expr->is_reachable_else();
 
-  // create each block
+  // condition value and block
+  auto cond_value = BuildExpression(expr->cond());
+  auto cond_bb = builder_.GetInsertBlock();
+
+  // branch blocks and merge block
   auto func = builder_.GetInsertBlock()->getParent();
   auto then_bb = llvm::BasicBlock::Create(llvm_context(), "then", func);
   auto else_bb = llvm::BasicBlock::Create(llvm_context(), "else", func);
   auto merge_bb = merge_bb_reachable ? llvm::BasicBlock::Create(llvm_context(), "ifcont", func) : nullptr;
-
-  // condition expression
-  auto cond_value = BuildExpression(expr->cond());
   builder_.CreateCondBr(cond_value, then_bb, else_bb);
 
   // branch processing lambda
@@ -748,6 +792,7 @@ llvm::Value* FunctionLowerer::BuildConditionalExpression(ConditionalExpression* 
   };
 
   // then branch
+  then_bb->moveAfter(cond_bb);
   builder_.SetInsertPoint(then_bb);
   auto then_value = branch_proc(expr->then_expr(), then_expr_type, expr->is_reachable_then());
   then_bb = builder_.GetInsertBlock();

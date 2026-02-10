@@ -150,13 +150,13 @@ int main(int argc, char** argv) {
   std::cout << std::endl;
 
   xylo::Compiler compiler(&context);
-  auto entry_point = compiler.Compile(file_ast.get(), true);
+  auto exe = compiler.Compile(file_ast.get(), true);
   if (compiler.has_diagnostics()) {
     PrintError(compiler);
     return 1;
   }
 
-  auto result = entry_point();
+  auto result = exe->Run();
   std::cout << std::endl;
   std::cout << "Program exited with code: " << result << std::endl;
 

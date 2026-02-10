@@ -42,10 +42,10 @@ int64_t CompileAndRun(const char* source) {
   auto file_ast = GetVerifiedAST(&context, source);
 
   Compiler compiler(&context);
-  auto entry_point = compiler.Compile(file_ast.get());
+  auto exe = compiler.Compile(file_ast.get());
   xylo_contract(!compiler.has_diagnostics());
 
-  return entry_point();
+  return exe->Run();
 }
 
 

@@ -20,6 +20,26 @@ namespace xylo {
 
 static constexpr auto kEntryPointName = "__entry_point";
 
+
+class JITExecutable : public Executable {
+ public:
+  using EntryPoint = int64_t (*)();
+
+  explicit JITExecutable(std::unique_ptr<llvm::orc::LLJIT> jit) :
+      jit_(std::move(jit)) {}
+
+  int64_t Run() override {
+    auto Err = llvm::ExitOnError();
+    auto entry_symbol = Err(jit_->lookup(kEntryPointName));
+    auto entry_point = entry_symbol.toPtr<EntryPoint>();
+    return entry_point();
+  }
+
+ private:
+  std::unique_ptr<llvm::orc::LLJIT> jit_;
+};
+
+
 static void RegisterSystemFunctions(llvm::orc::LLJIT* jit) {
   llvm::orc::MangleAndInterner mangle(jit->getExecutionSession(), jit->getDataLayout());
   llvm::orc::SymbolMap symbols;
@@ -86,7 +106,7 @@ static void LightOptimizeModule(llvm::Module* M) {
 }
 
 
-EntryPoint Compiler::Compile(FileAST* file_ast, bool print_module) {
+ExecutablePtr Compiler::Compile(FileAST* file_ast, bool print_module) {
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
 
@@ -133,8 +153,7 @@ EntryPoint Compiler::Compile(FileAST* file_ast, bool print_module) {
 
   Err(jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), llvm_context)));
 
-  auto entry_symbol = Err(jit->lookup(kEntryPointName));
-  return entry_symbol.toPtr<EntryPoint>();
+  return std::make_unique<JITExecutable>(std::move(jit));
 }
 
 

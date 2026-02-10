@@ -2,6 +2,8 @@
 #ifndef XYLO_CODEGEN_COMPILER_H_
 #define XYLO_CODEGEN_COMPILER_H_
 
+#include <memory>
+
 #include "xylo/syntax/ast.h"
 #include "xylo/syntax/context.h"
 #include "xylo/syntax/diagnostic.h"
@@ -9,7 +11,14 @@
 namespace xylo {
 
 
-using EntryPoint = int64_t (*)();
+class Executable {
+ public:
+  virtual ~Executable() = default;
+  virtual int64_t Run() = 0;
+};
+
+using ExecutablePtr = std::unique_ptr<Executable>;
+
 
 class Compiler : public DiagnosticReporter {
  public:
@@ -21,7 +30,7 @@ class Compiler : public DiagnosticReporter {
   Compiler(const Compiler&) = delete;
   Compiler& operator=(const Compiler&) = delete;
 
-  EntryPoint Compile(FileAST* file_ast, bool print_module = false);
+  ExecutablePtr Compile(FileAST* file_ast, bool print_module = false);
 
  protected:
   Symbol* FindMainSymbol(FileAST* file_ast);

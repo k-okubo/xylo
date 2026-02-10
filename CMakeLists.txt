@@ -5,13 +5,22 @@ include(FetchContent)
 
 
 # LLVM
+#set(LLVM_DIR "/path/to/llvm-18/lib/cmake/llvm")
 find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Found LLVM: ${LLVM_DIR} (found version \"${LLVM_PACKAGE_VERSION}\")")
 
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
-llvm_map_components_to_libnames(LLVM_LIBS support core irreader native orcjit)
+
+find_library(LLVM_DYLIB LLVM HINTS "${LLVM_LIBRARY_DIRS}")
+if (LLVM_DYLIB)
+  message(STATUS "Using shared LLVM library: ${LLVM_DYLIB}")
+  set(LLVM_LIBS ${LLVM_DYLIB})
+else()
+  message(STATUS "Using static LLVM libraries")
+  llvm_map_components_to_libnames(LLVM_LIBS support core irreader native orcjit)
+endif()
 
 
 # Boehm GC

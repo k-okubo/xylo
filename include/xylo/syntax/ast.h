@@ -500,7 +500,9 @@ class VarStatement : public Statement {
       Statement(Kind::kVar),
       symbol_(std::move(symbol)),
       expr_(std::move(expr)),
-      arena_() {}
+      arena_() {
+    arena_.MarkPersistent();  // AST nodes live for the whole compilation
+  }
 
  public:
   Symbol* symbol() const { return symbol_.get(); }
@@ -558,7 +560,9 @@ class Expression : public Downcastable {
       kind_(kind),
       type_(nullptr),
       position_(),
-      arena_() {}
+      arena_() {
+    arena_.MarkPersistent();  // AST nodes live for the whole compilation
+  }
 
  public:
   virtual ~Expression() = default;

@@ -50,10 +50,19 @@ class TypeArena {
       pool_() {}
   virtual ~TypeArena() = default;
 
+  // Marks types allocated in (or merged into) this arena as pipeline-lifetime, so
+  // pointers to them may be stored in memoization caches (see Type::MarkMemoPersistent).
+  // Only arenas owned by pipeline-lifetime objects (context, AST nodes, other persistent
+  // types) may be marked; stack-local scratch arenas must stay non-persistent.
+  void MarkPersistent() { persistent_ = true; }
+
   template <class T, class... Args>
   T* Alloc(Args&&... args) {
     auto type = std::make_unique<T>(std::forward<Args>(args)...);
     T* ptr = type.get();
+    if (persistent_) {
+      ptr->MarkMemoPersistent();
+    }
     pool_.push_back(std::move(type));
     return ptr;
   }
@@ -61,19 +70,18 @@ class TypeArena {
   template <class T>
   T* Adopt(std::unique_ptr<T>&& type) {
     auto ptr = type.get();
+    if (persistent_) {
+      ptr->MarkMemoPersistent();
+    }
     pool_.push_back(std::move(type));
     return ptr;
   }
 
-  void Merge(TypeArena* other) {
-    for (auto& type : other->pool_) {
-      pool_.push_back(std::move(type));
-    }
-    other->pool_.clear();
-  }
+  void Merge(TypeArena* other);
 
  private:
   Vector<TypePtr> pool_;
+  bool persistent_ = false;
 };
 
 
@@ -104,7 +112,8 @@ class Type : public Downcastable {
       kind_(kind),
       instantiated_info_(nullptr),
       instantiated_ref_(nullptr),
-      arena_() {}
+      arena_(),
+      memo_persistent_(false) {}
 
  public:
   virtual ~Type() = default;
@@ -114,6 +123,15 @@ class Type : public Downcastable {
 
   Kind kind() const { return kind_; }
   TypeArena* arena() { return &arena_; }
+
+  // A memo-persistent type lives until the end of the compilation pipeline, so a
+  // pointer to it may be stored in long-lived caches (VariableBase memoization).
+  // Persistence is inherited by types allocated in this type's arena afterwards.
+  bool is_memo_persistent() const { return memo_persistent_; }
+  void MarkMemoPersistent() {
+    memo_persistent_ = true;
+    arena_.MarkPersistent();
+  }
 
   virtual bool equals(const Type* other) const = 0;
   virtual bool is_atomic_type() const { return false; }
@@ -173,7 +191,19 @@ class Type : public Downcastable {
   InstantiatedInfoPtr instantiated_info_;
   const InstantiatedInfo* instantiated_ref_;
   TypeArena arena_;
+  bool memo_persistent_;
 };
+
+
+inline void TypeArena::Merge(TypeArena* other) {
+  for (auto& type : other->pool_) {
+    if (persistent_) {
+      type->MarkMemoPersistent();
+    }
+    pool_.push_back(std::move(type));
+  }
+  other->pool_.clear();
+}
 
 
 class ErrorType : public Type {
@@ -185,7 +215,9 @@ class ErrorType : public Type {
 
  protected:
   ErrorType() :
-      Type(Kind::kError) {}
+      Type(Kind::kError) {
+    MarkMemoPersistent();  // immortal singleton
+  }
 
  public:
   bool equals(const Type* other) const override;
@@ -597,7 +629,9 @@ class VariableBase : public Type {
 
   // Memoized subtype relations already established against this variable.
   // Caching positive results is sound because bounds only grow during inference,
-  // so an established relation can never be invalidated.
+  // so an established relation can never be invalidated. Callers must only record
+  // memo-persistent types (see Type::MarkMemoPersistent): a pointer to a type from
+  // a stack-local arena would dangle here once that arena is destroyed.
   bool has_proven_super(const Type* t) const { return proven_supers_.contains(t); }
   bool has_proven_sub(const Type* t) const { return proven_subs_.contains(t); }
   void record_proven_super(const Type* t) const { proven_supers_.emplace(t); }

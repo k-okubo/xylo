@@ -683,13 +683,19 @@ static bool LookupProvenSubtype(const Type* src, const Type* dst) {
 }
 
 
+// The stored counterpart must be pipeline-lifetime (memo-persistent): several call
+// sites instantiate types into stack-local arenas (e.g. MemberConstraint::Resolve,
+// Inferencer::CheckOverrides, codegen lowerers) and run subtype queries on them;
+// caching such short-lived pointers on a longer-lived variable would leave dangling
+// entries once the arena is destroyed, and a later allocation reusing the address
+// could produce a spurious cache hit.
 static void RecordProvenSubtype(const Type* src, const Type* dst) {
   if (!IsCacheableSubtypePair(src, dst)) {
     return;
   }
-  if (src->is_var_type()) {
+  if (src->is_var_type() && dst->is_memo_persistent()) {
     src->As<VariableBase>()->record_proven_super(dst);
-  } else {
+  } else if (dst->is_var_type() && src->is_memo_persistent()) {
     dst->As<VariableBase>()->record_proven_sub(src);
   }
 }

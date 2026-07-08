@@ -33,6 +33,18 @@ class XyloContext {
       float_type_(NominalType::Category::kPrimitive, float_symbol_.name()),
       int_type_(NominalType::Category::kPrimitive, int_symbol_.name()),
       string_type_(NominalType::Category::kPrimitive, string_symbol_.name()) {
+    // context-owned types live for the whole compilation: allow memoization caches
+    // to hold pointers to them and to types allocated in the context arena
+    arena_.MarkPersistent();
+    bottom_type_.MarkMemoPersistent();
+    unit_type_.MarkMemoPersistent();
+    bool_type_.MarkMemoPersistent();
+    comparable_type_.MarkMemoPersistent();
+    numeric_type_.MarkMemoPersistent();
+    float_type_.MarkMemoPersistent();
+    int_type_.MarkMemoPersistent();
+    string_type_.MarkMemoPersistent();
+
     // set primitive type scopes
     unit_type_.set_scope(&root_scope_);
     bool_type_.set_scope(&root_scope_);

@@ -661,8 +661,46 @@ static bool ApplySubtypingRules(S src, D dst, const P& proc) {
 }
 
 
+// A subtype relation may be memoized on the participating variable only if neither
+// side is a mutable composite bound object (union/intersection/tuple): those gain
+// elements over time and their forall-style answers are not monotone.
+static bool IsCacheableSubtypePair(const Type* src, const Type* dst) {
+  auto is_composite = [](const Type* t) {
+    return t->kind() == Type::Kind::kUnion || t->kind() == Type::Kind::kIntersection || t->kind() == Type::Kind::kTuple;
+  };
+  return (src->is_var_type() || dst->is_var_type()) && !is_composite(src) && !is_composite(dst);
+}
+
+
+static bool LookupProvenSubtype(const Type* src, const Type* dst) {
+  if (src->is_var_type() && src->As<VariableBase>()->has_proven_super(dst)) {
+    return true;
+  }
+  if (dst->is_var_type() && dst->As<VariableBase>()->has_proven_sub(src)) {
+    return true;
+  }
+  return false;
+}
+
+
+static void RecordProvenSubtype(const Type* src, const Type* dst) {
+  if (!IsCacheableSubtypePair(src, dst)) {
+    return;
+  }
+  if (src->is_var_type()) {
+    src->As<VariableBase>()->record_proven_super(dst);
+  } else {
+    dst->As<VariableBase>()->record_proven_sub(src);
+  }
+}
+
+
 bool Type::IsSubtypeOf(const Type* dst, TypePairSet* visited) const {
   auto src = this;
+
+  if (LookupProvenSubtype(src, dst)) {
+    return true;
+  }
 
   // if upper/lower bound of tyvar/metavar is circularly, treat it as having no bound
   if (visited->contains({src, dst})) {
@@ -710,12 +748,24 @@ bool Type::IsSubtypeOf(const Type* dst, TypePairSet* visited) const {
     .onMetavarDst = onVarDst,
   };
 
-  return ApplySubtypingRules(src, dst, proc);
+  // memoize positive results: cycles resolve to false here, so a true result is
+  // fully derived and stays valid as bounds grow
+  if (ApplySubtypingRules(src, dst, proc)) {
+    RecordProvenSubtype(src, dst);
+    return true;
+  }
+  return false;
 }
 
 
 bool Type::CanConstrainSubtypeOf(const Type* dst, TypePairSet* visited) const {
   auto src = this;
+
+  // already established relations need no re-checking (and must not be recorded
+  // here: "can constrain" answers may be invalidated by later constraints)
+  if (LookupProvenSubtype(src, dst)) {
+    return true;
+  }
 
   // if upper/lower bound of tyvar/metavar is circularly, treat it as having no bound
   if (visited->contains({src, dst})) {
@@ -760,6 +810,10 @@ bool Type::CanConstrainSubtypeOf(const Type* dst, TypePairSet* visited) const {
 bool Type::ConstrainSubtypeOf(Type* dst, TypePairSet* visited) {
   auto src = this;
 
+  if (LookupProvenSubtype(src, dst)) {
+    return true;
+  }
+
   if (visited->contains({src, dst})) {
     return true;
   }
@@ -803,7 +857,13 @@ bool Type::ConstrainSubtypeOf(Type* dst, TypePairSet* visited) {
     .onMetavarDst = onVarDst,
   };
 
-  return ApplySubtypingRules(src, dst, proc);
+  // record successfully established constraints so they are never re-derived;
+  // the coinductive early return above must not record (only an in-progress assumption)
+  if (ApplySubtypingRules(src, dst, proc)) {
+    RecordProvenSubtype(src, dst);
+    return true;
+  }
+  return false;
 }
 
 
@@ -1132,6 +1192,15 @@ bool VariableBase::CanConstrainUpperBound(const Type* new_ub, TypePairSet* visit
   // circular types are prohibited
   if (OccursIn(new_ub, this, false)) {
     return false;
+  }
+
+  // new_ub is a variable with no upper constraints (top-like): anything can be
+  // constrained below it, so the lower-bound compatibility walk is vacuously true
+  if (new_ub->is_var_type()) {
+    auto new_ub_var = new_ub->As<VariableBase>();
+    if (!new_ub_var->is_locked() && new_ub_var->upper_bound()->empty() && new_ub_var->upper_func_shape() == nullptr) {
+      return true;
+    }
   }
 
   if (!lower_bound()->CanConstrainSubtypeOf(new_ub, visited)) {

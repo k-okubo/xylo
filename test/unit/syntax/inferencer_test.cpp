@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include "xylo/syntax/context.h"
 #include "xylo/syntax/lexer.h"
 #include "xylo/syntax/parser.h"
@@ -3261,6 +3263,56 @@ TEST(InferencerTest, GenericInterface_Basic) {
   TypeArena arena;
   EXPECT_EQ(let_expr1->type()->Zonk(&subst, true, &arena)->As<NominalType>()->name()->str().cpp_str(), "Foo");
   EXPECT_EQ(let_expr2->type()->Zonk(&subst, true, &arena), context.int_type());
+}
+
+
+static std::string GenChainSource(size_t terms, const char* term, const char* op, const char* odd_term = nullptr) {
+  std::string source = "def main() {\n  return ";
+  for (size_t i = 0; i < terms; ++i) {
+    if (i > 0) {
+      source += op;
+    }
+    source += (odd_term != nullptr && i % 2 == 1) ? odd_term : term;
+  }
+  source += "\n}\n";
+  return source;
+}
+
+
+// Regression test: inference over long numeric operator chains used to be
+// super-linear (~O(n^3); n=400 took tens of seconds and n=2000 nearly an hour)
+// because established subtype relations between metavars were re-derived from
+// scratch on every new constraint. With memoization this finishes in tens of
+// milliseconds; a regression would blow the ctest timeout.
+TEST(InferencerTest, LongArithmeticChain) {
+  auto source = GenChainSource(2000, "1", " + ");
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source.c_str());
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(inferencer.has_diagnostics());
+
+  ASSERT_GE(file_ast->declarations().size(), 1);
+  TypePrinter tp;
+  EXPECT_EQ(tp(file_ast->declarations()[0]->symbol()->type()), "() -> int");
+}
+
+
+TEST(InferencerTest, LongArithmeticChain_FloatPromotion) {
+  auto source = GenChainSource(500, "1", " * ", "1.5");
+
+  XyloContext context;
+  auto file_ast = GetResolvedAST(&context, source.c_str());
+
+  Inferencer inferencer(&context);
+  inferencer.VisitFileAST(file_ast.get());
+  ASSERT_FALSE(inferencer.has_diagnostics());
+
+  ASSERT_GE(file_ast->declarations().size(), 1);
+  TypePrinter tp;
+  EXPECT_EQ(tp(file_ast->declarations()[0]->symbol()->type()), "() -> float");
 }
 
 

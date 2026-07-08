@@ -595,6 +595,14 @@ class VariableBase : public Type {
   UnionType* lower_bound() const { return lower_bound_.get(); }
   FunctionType* func_shape() const { return lower_func_shape() ? lower_func_shape() : upper_func_shape(); }
 
+  // Memoized subtype relations already established against this variable.
+  // Caching positive results is sound because bounds only grow during inference,
+  // so an established relation can never be invalidated.
+  bool has_proven_super(const Type* t) const { return proven_supers_.contains(t); }
+  bool has_proven_sub(const Type* t) const { return proven_subs_.contains(t); }
+  void record_proven_super(const Type* t) const { proven_supers_.emplace(t); }
+  void record_proven_sub(const Type* t) const { proven_subs_.emplace(t); }
+
  protected:
   void set_upper_bound(IntersectionTypePtr&& upper_bound) { upper_bound_ = std::move(upper_bound); }
   void set_lower_bound(UnionTypePtr&& lower_bound) { lower_bound_ = std::move(lower_bound); }
@@ -645,6 +653,10 @@ class VariableBase : public Type {
   FunctionTypePtr upper_func_shape_;
   FunctionTypePtr lower_func_shape_;
   std::function<Type*(TypeArena*)> create_var_;
+
+  // mutable: memoization updated from const subtype queries
+  mutable Set<const Type*> proven_supers_;
+  mutable Set<const Type*> proven_subs_;
 
   friend class Type;
   friend class TypeScheme;

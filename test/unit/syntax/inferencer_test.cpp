@@ -3282,8 +3282,10 @@ static std::string GenChainSource(size_t terms, const char* term, const char* op
 // Regression test: inference over long numeric operator chains used to be
 // super-linear (~O(n^3); n=400 took tens of seconds and n=2000 nearly an hour)
 // because established subtype relations between metavars were re-derived from
-// scratch on every new constraint. With memoization this finishes in tens of
-// milliseconds; a regression would blow the ctest timeout.
+// scratch on every new constraint. With memoization of applied constraints and
+// deferral of the already-satisfied probe against bare metavars this is roughly
+// quadratic with a small constant (n=2000 in a few seconds); a cubic regression
+// would blow the ctest timeout.
 TEST(InferencerTest, LongArithmeticChain) {
   auto source = GenChainSource(2000, "1", " + ");
 

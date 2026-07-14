@@ -3,8 +3,9 @@
 # この自明なプログラムのコンパイルだけで数秒かかった(n=250 -> 約6秒 / n=400 -> 約28秒)。
 # 原因は、確立済みの部分型関係をメモ化せず、新規制約のたびに metavar チェーン全体の
 # バウンドグラフを再走査して再導出していたこと(src/syntax/type.cpp)。
-# 現在は確立済み関係を VariableBase 上にメモ化し、上限が空の変数への Can 判定を
-# ショートサーキットすることで、チェーン長に対してほぼ線形(n=250 で数ミリ秒)。
+# 現在は適用済み制約を VariableBase 上にメモ化し、裸の metavar に対する
+# 「既に満たされているか」プローブを選言の後段に遅延することで、
+# チェーン長に対して概ね二乗・小さな定数(n=250 で約0.1秒、n=2000 で数秒)。
 # 回帰テスト: test/unit/syntax/inferencer_test.cpp の InferencerTest.LongArithmeticChain。
 # 確認: `time build/bin/xylo examples/bug_inference_blowup.xy` (exit code 250)。
 # 注: n>=~20000 では AST 再帰によるスタックオーバーフローで落ちる既知の別バグがある。

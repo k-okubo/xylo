@@ -661,14 +661,19 @@ static bool ApplySubtypingRules(S src, D dst, const P& proc) {
 }
 
 
+uint64_t VariableBase::shape_epoch_ = 0;
+
+
 // A subtype relation may be memoized on the participating variable only if neither
-// side is a mutable composite bound object (union/intersection/tuple): those gain
-// elements over time and their forall-style answers are not monotone.
+// side is a mutable composite bound object (union/intersection/tuple — those gain
+// elements over time and their forall-style answers are not monotone) or a member
+// constraint (whose answers change as it gets resolved).
 static bool IsCacheableSubtypePair(const Type* src, const Type* dst) {
-  auto is_composite = [](const Type* t) {
-    return t->kind() == Type::Kind::kUnion || t->kind() == Type::Kind::kIntersection || t->kind() == Type::Kind::kTuple;
+  auto is_mutable_answer = [](const Type* t) {
+    return t->kind() == Type::Kind::kUnion || t->kind() == Type::Kind::kIntersection ||
+           t->kind() == Type::Kind::kTuple || t->kind() == Type::Kind::kMemberConstraint;
   };
-  return (src->is_var_type() || dst->is_var_type()) && !is_composite(src) && !is_composite(dst);
+  return (src->is_var_type() || dst->is_var_type()) && !is_mutable_answer(src) && !is_mutable_answer(dst);
 }
 
 
@@ -699,6 +704,16 @@ static void RecordProvenSubtype(const Type* src, const Type* dst) {
     dst->As<VariableBase>()->record_proven_sub(src);
   }
 }
+
+
+// Counts hits of ConstrainSubtypeOf's coinductive visited-shortcut. A frame may only
+// memoize its success if no shortcut fired during its derivation: a shortcut answer is
+// an in-progress assumption that is never discharged, so a result depending on it is
+// not a fully established relation. (CanConstrainSubtypeOf's visited-shortcut is not
+// counted: Can answers are never recorded, and a Constrain success records the state
+// of its own application, not of the speculative pre-check.) The compiler pipeline is
+// single-threaded.
+static uint64_t coinductive_assumption_hits = 0;
 
 
 bool Type::IsSubtypeOf(const Type* dst, TypePairSet* visited) const {
@@ -754,8 +769,12 @@ bool Type::IsSubtypeOf(const Type* dst, TypePairSet* visited) const {
     .onMetavarDst = onVarDst,
   };
 
-  // memoize positive results: cycles resolve to false here, so a true result is
-  // fully derived and stays valid as bounds grow
+  // memoize positive results: the rules contain no negation and cycles resolve to
+  // false here, so a true result is fully derived from the current bounds without
+  // leaning on an in-progress assumption; it stays valid while bounds only grow and
+  // is invalidated via the shape epoch once any variable acquires a func shape (the
+  // one event that can flip an established answer, including from speculative Can*
+  // probes that applied no constraint)
   if (ApplySubtypingRules(src, dst, proc)) {
     RecordProvenSubtype(src, dst);
     return true;
@@ -821,9 +840,11 @@ bool Type::ConstrainSubtypeOf(Type* dst, TypePairSet* visited) {
   }
 
   if (visited->contains({src, dst})) {
+    ++coinductive_assumption_hits;
     return true;
   }
   visited->emplace(std::pair(src, dst));
+  auto assumption_hits_before = coinductive_assumption_hits;
 
   // pre-check
   if (src->is_var_type() || dst->is_var_type()) {
@@ -863,10 +884,14 @@ bool Type::ConstrainSubtypeOf(Type* dst, TypePairSet* visited) {
     .onMetavarDst = onVarDst,
   };
 
-  // record successfully established constraints so they are never re-derived;
-  // the coinductive early return above must not record (only an in-progress assumption)
+  // record successfully applied constraints so they are never re-derived, but only
+  // when the derivation was self-contained: a success that leaned on a coinductive
+  // visited-shortcut (in this function or in a Can* pre-check) depends on an
+  // in-progress assumption that may never be discharged, so it must not be cached
   if (ApplySubtypingRules(src, dst, proc)) {
-    RecordProvenSubtype(src, dst);
+    if (coinductive_assumption_hits == assumption_hits_before) {
+      RecordProvenSubtype(src, dst);
+    }
     return true;
   }
   return false;
@@ -1181,45 +1206,60 @@ static void CollectTopAncestors(Type* type, UnionType* ancestors) {
 }
 
 
+// A variable with empty bounds and no func shapes. Subtype probes against such a
+// variable almost always fail (it is usually a freshly created metavar nothing
+// refers to yet), so they are worth deferring.
+static bool IsBareVariable(const Type* t) {
+  if (!t->is_var_type()) {
+    return false;
+  }
+  auto var = t->As<VariableBase>();
+  return var->upper_bound()->empty() && var->lower_bound()->empty() && var->func_shape() == nullptr;
+}
+
+
 bool VariableBase::CanConstrainUpperBound(const Type* new_ub, TypePairSet* visited) const {
   xylo_contract(new_ub->kind() != Type::Kind::kTuple);
   xylo_contract(new_ub->kind() != Type::Kind::kIntersection);
   xylo_contract(new_ub->kind() != Type::Kind::kScheme);
   xylo_contract(!(this->kind() == Type::Kind::kTyvar && new_ub->kind() == Type::Kind::kMetavar));
 
-  if (upper_bound()->IsSubtypeOf(new_ub)) {
-    return true;
-  }
+  auto already_satisfied = [&] {
+    return upper_bound()->IsSubtypeOf(new_ub);
+  };
 
-  if (is_locked()) {
-    return false;
-  }
-
-  // circular types are prohibited
-  if (OccursIn(new_ub, this, false)) {
-    return false;
-  }
-
-  // new_ub is a variable with no upper constraints (top-like): anything can be
-  // constrained below it, so the lower-bound compatibility walk is vacuously true
-  if (new_ub->is_var_type()) {
-    auto new_ub_var = new_ub->As<VariableBase>();
-    if (!new_ub_var->is_locked() && new_ub_var->upper_bound()->empty() && new_ub_var->upper_func_shape() == nullptr) {
-      return true;
-    }
-  }
-
-  if (!lower_bound()->CanConstrainSubtypeOf(new_ub, visited)) {
-    return false;
-  }
-
-  if (lower_func_shape() != nullptr) {
-    if (!lower_func_shape()->CanConstrainSubtypeOf(new_ub, visited)) {
+  auto can_constrain = [&] {
+    if (is_locked()) {
       return false;
     }
-  }
 
-  return true;
+    // circular types are prohibited
+    if (OccursIn(new_ub, this, false)) {
+      return false;
+    }
+
+    if (!lower_bound()->CanConstrainSubtypeOf(new_ub, visited)) {
+      return false;
+    }
+
+    if (lower_func_shape() != nullptr) {
+      if (!lower_func_shape()->CanConstrainSubtypeOf(new_ub, visited)) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // The answer is "already satisfied || can constrain", and the order of evaluation
+  // does not change it. The already-satisfied probe re-walks this variable's upper
+  // cone with a fresh visited set, which is wasted work when new_ub is a bare
+  // variable (long chains of such probes made inference cubic in the length of
+  // arithmetic operator chains), so evaluate the cheaper disjunct first then.
+  if (IsBareVariable(new_ub)) {
+    return can_constrain() || already_satisfied();
+  }
+  return already_satisfied() || can_constrain();
 }
 
 
@@ -1498,6 +1538,10 @@ void VariableBase::Functionize(const FunctionType* base_shape) {
     return;
   }
 
+  // acquiring a func shape switches IsSubtypeOf to the shape-based branch, which can
+  // flip previously derived answers: invalidate all memoized subtype relations
+  ++shape_epoch_;
+
   auto params_size = base_shape->params_type()->elements().size();
   auto params = this->arena()->Alloc<TupleType>();
 
@@ -1512,6 +1556,8 @@ void VariableBase::Functionize(const FunctionType* base_shape) {
 
 
 bool VariableBase::GenUpperBoundFuncShape(FunctionType* new_ub, TypePairSet* visited) {
+  ++shape_epoch_;  // shape acquisition / closure re-flagging can flip memoized answers
+
   if (upper_func_shape()) {
     if (!new_ub->is_closure()) {
       upper_func_shape_->set_closure(false);
@@ -1526,6 +1572,8 @@ bool VariableBase::GenUpperBoundFuncShape(FunctionType* new_ub, TypePairSet* vis
 
 
 bool VariableBase::GenLowerBoundFuncShape(FunctionType* new_lb, TypePairSet* visited) {
+  ++shape_epoch_;  // shape acquisition / closure re-flagging can flip memoized answers
+
   if (lower_func_shape()) {
     if (new_lb->is_closure()) {
       lower_func_shape_->set_closure(true);

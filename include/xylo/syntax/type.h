@@ -2,6 +2,7 @@
 #ifndef XYLO_SYNTAX_TYPE_H_
 #define XYLO_SYNTAX_TYPE_H_
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -627,15 +628,26 @@ class VariableBase : public Type {
   UnionType* lower_bound() const { return lower_bound_.get(); }
   FunctionType* func_shape() const { return lower_func_shape() ? lower_func_shape() : upper_func_shape(); }
 
-  // Memoized subtype relations already established against this variable.
-  // Caching positive results is sound because bounds only grow during inference,
-  // so an established relation can never be invalidated. Callers must only record
-  // memo-persistent types (see Type::MarkMemoPersistent): a pointer to a type from
-  // a stack-local arena would dangle here once that arena is destroyed.
-  bool has_proven_super(const Type* t) const { return proven_supers_.contains(t); }
-  bool has_proven_sub(const Type* t) const { return proven_subs_.contains(t); }
-  void record_proven_super(const Type* t) const { proven_supers_.emplace(t); }
-  void record_proven_sub(const Type* t) const { proven_subs_.emplace(t); }
+  // Memoized subtype relations already established against this variable. The
+  // subtyping rules contain no negation, so a positive answer derived from the
+  // current bounds stays valid while bounds only grow. The one event that can flip
+  // an established positive answer is a variable acquiring (or re-flagging) a func
+  // shape, which switches IsSubtypeOf to the shape-based branch: every shape event
+  // bumps the global shape_epoch_, and entries recorded under an older epoch are
+  // treated as absent. Callers must additionally only record memo-persistent types
+  // (see Type::MarkMemoPersistent — a pointer to a type from a stack-local arena
+  // would dangle here) and must not record results that leaned on an in-progress
+  // coinductive assumption (see ConstrainSubtypeOf).
+  bool has_proven_super(const Type* t) const { return proven_epoch_ == shape_epoch_ && proven_supers_.contains(t); }
+  bool has_proven_sub(const Type* t) const { return proven_epoch_ == shape_epoch_ && proven_subs_.contains(t); }
+  void record_proven_super(const Type* t) const {
+    RefreshProvenEpoch();
+    proven_supers_.emplace(t);
+  }
+  void record_proven_sub(const Type* t) const {
+    RefreshProvenEpoch();
+    proven_subs_.emplace(t);
+  }
 
  protected:
   void set_upper_bound(IntersectionTypePtr&& upper_bound) { upper_bound_ = std::move(upper_bound); }
@@ -688,9 +700,22 @@ class VariableBase : public Type {
   FunctionTypePtr lower_func_shape_;
   std::function<Type*(TypeArena*)> create_var_;
 
+  void RefreshProvenEpoch() const {
+    if (proven_epoch_ != shape_epoch_) {
+      proven_supers_.clear();
+      proven_subs_.clear();
+      proven_epoch_ = shape_epoch_;
+    }
+  }
+
+  // bumped on every func-shape event (Functionize / Gen*BoundFuncShape); the
+  // compiler pipeline is single-threaded
+  static uint64_t shape_epoch_;
+
   // mutable: memoization updated from const subtype queries
   mutable Set<const Type*> proven_supers_;
   mutable Set<const Type*> proven_subs_;
+  mutable uint64_t proven_epoch_ = 0;
 
   friend class Type;
   friend class TypeScheme;

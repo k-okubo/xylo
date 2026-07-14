@@ -1504,6 +1504,68 @@ TEST(TypeTest, FunctionVariable_ClosureRules) {
 }
 
 
+TEST(TypeTest, FunctionVariable_OccursInLowerShape) {
+  TestTypes types;
+  auto bar_type = types.bar_type();
+
+  // (metavarY -> Bar) <: metavarX
+  auto metavarX = new TypeMetavar();
+  auto metavarY = new TypeMetavar();
+  auto param = new TupleType();
+  param->add_element(metavarY);
+  auto func_metavarY_to_bar = new FunctionType(false, param, bar_type);
+  EXPECT_TRUE(func_metavarY_to_bar->ConstrainSubtypeOf(metavarX));
+
+  // metavarX <: metavarY would make metavarY circular through metavarX's lower
+  // func shape, even though metavarY itself has no upper constraints
+  EXPECT_FALSE(metavarX->CanConstrainSubtypeOf(metavarY));
+
+  // a fresh variable not occurring in metavarX's bounds is still acceptable
+  auto metavarZ = new TypeMetavar();
+  EXPECT_TRUE(metavarX->CanConstrainSubtypeOf(metavarZ));
+
+  delete metavarX;
+  delete metavarY;
+  delete param;
+  delete func_metavarY_to_bar;
+  delete metavarZ;
+}
+
+
+TEST(TypeTest, MemoizationInvalidatedByFuncShape) {
+  TestTypes types;
+  auto int_type = types.context()->int_type();
+  auto float_type = types.context()->float_type();
+  auto bar_type = types.bar_type();
+
+  // metavarA <: int, then derive metavarA <: float (memoized)
+  auto metavarA = new TypeMetavar();
+  EXPECT_TRUE(metavarA->ConstrainSubtypeOf(int_type));
+  EXPECT_TRUE(metavarA->IsSubtypeOf(float_type));
+  EXPECT_TRUE(metavarA->has_proven_super(float_type));
+
+  // a func-shape acquisition anywhere switches IsSubtypeOf to the shape-based
+  // branch for the affected variables, which can flip previously derived answers:
+  // all memoized relations recorded under the old epoch must be dropped
+  auto metavarF = new TypeMetavar();
+  auto param = new TupleType();
+  param->add_element(bar_type);
+  auto func_bar_to_bar = new FunctionType(false, param, bar_type);
+  EXPECT_TRUE(func_bar_to_bar->ConstrainSubtypeOf(metavarF));
+
+  EXPECT_FALSE(metavarA->has_proven_super(float_type));
+
+  // the relation itself is still derivable from the bounds (and re-memoized)
+  EXPECT_TRUE(metavarA->IsSubtypeOf(float_type));
+  EXPECT_TRUE(metavarA->has_proven_super(float_type));
+
+  delete metavarA;
+  delete metavarF;
+  delete param;
+  delete func_bar_to_bar;
+}
+
+
 TEST(TypeTest, MemberConstraint_FromNominal) {
   TestTypes types;
   auto bar_type = types.bar_type();
